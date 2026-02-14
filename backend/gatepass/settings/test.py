@@ -11,6 +11,7 @@ DATABASES = {
 }
 
 # Disable password hashing to speed up tests
+# Using Django's recommended fast hasher for testing
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
