@@ -21,8 +21,9 @@ const renderWithProviders = (component: React.ReactElement) => {
 describe('LoginForm', () => {
   it('renders login form', () => {
     renderWithProviders(<LoginForm />)
-    expect(screen.getByText('Login')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Login' })).toBeInTheDocument()
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+    expect(screen.getByText('Enter your credentials to access GatePass')).toBeInTheDocument()
   })
 })
