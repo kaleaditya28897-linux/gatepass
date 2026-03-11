@@ -42,4 +42,6 @@ class CheckInSerializer(serializers.Serializer):
     def validate(self, data):
         if not data.get("pass_code") and not data.get("delivery_id"):
             raise serializers.ValidationError("Either pass_code or delivery_id is required.")
+        if data.get("pass_code") and data.get("delivery_id"):
+            raise serializers.ValidationError("Provide either pass_code or delivery_id, not both.")
         return data

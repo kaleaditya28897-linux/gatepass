@@ -9,6 +9,6 @@ employee_router = DefaultRouter()
 employee_router.register("", views.EmployeeViewSet, basename="employee")
 
 urlpatterns = [
-    path("", include(router.urls)),
     path("employees/", include(employee_router.urls)),
+    path("", include(router.urls)),
 ]

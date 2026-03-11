@@ -114,6 +114,25 @@ export interface VisitorPass {
   updated_at: string
 }
 
+export interface VerifiedVisitorPass {
+  id: number
+  visitor_name: string
+  visitor_phone: string
+  visitor_company: string
+  id_type: string
+  id_number: string
+  photo: string | null
+  vehicle_number: string
+  purpose: string
+  host_company_name: string
+  host_employee_name: string | null
+  qr_code_image: string | null
+  pass_type: VisitorPass['pass_type']
+  status: VisitorPass['status']
+  valid_from: string
+  valid_until: string
+}
+
 export interface EntryLog {
   id: number
   visitor_pass: number | null

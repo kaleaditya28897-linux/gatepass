@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { GATE_TYPES } from '@/utils/constants'
 import type { Gate } from '@/types'
 import { ColumnDef } from '@tanstack/react-table'
@@ -21,7 +21,6 @@ import { usePagination } from '@/hooks/usePagination'
 
 export function GatesPage() {
   const [open, setOpen] = useState(false)
-  const [editingGate, setEditingGate] = useState<Gate | null>(null)
   const { page, setPage } = usePagination()
   const queryClient = useQueryClient()
 

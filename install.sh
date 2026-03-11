@@ -272,7 +272,7 @@ install_dependencies() {
             ;;
         *)
             print_error "Unsupported distribution: $DISTRO"
-            echo "Please install dependencies manually. See docs/MANUAL_INSTALL.md"
+            echo "Please install dependencies manually. See docs/INSTALLATION.md"
             exit 1
             ;;
     esac

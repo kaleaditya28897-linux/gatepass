@@ -25,7 +25,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env.example
+      - .env
     depends_on:
       - db
       - redis
@@ -38,7 +38,7 @@ services:
     volumes:
       - ./backend:/app
     env_file:
-      - .env.example
+      - .env
     depends_on:
       - db
       - redis
@@ -47,6 +47,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: development
     volumes:
       - ./frontend:/app
       - /app/node_modules

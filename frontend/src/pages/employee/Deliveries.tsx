@@ -31,7 +31,7 @@ export function EmployeeDeliveriesPage() {
     queryFn: () => deliveriesApi.list({ page: page.toString() }),
   })
 
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<DeliveryInput>({
+  const { register, handleSubmit, reset, setValue } = useForm<DeliveryInput>({
     resolver: zodResolver(deliverySchema),
     defaultValues: { delivery_type: 'food_order' },
   })

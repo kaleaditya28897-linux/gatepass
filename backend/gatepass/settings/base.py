@@ -5,6 +5,11 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+
+def split_csv(value):
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
 
 INSTALLED_APPS = [

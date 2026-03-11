@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { authApi } from '@/api/auth'
+import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/store/authStore'
 
 export function useLogin() {
@@ -11,6 +12,7 @@ export function useLogin() {
     mutationFn: ({ username, password }: { username: string; password: string }) =>
       authApi.login(username, password),
     onSuccess: (data) => {
+      queryClient.clear()
       setAuth(data.user, data.access, data.refresh)
       const role = data.user.role
       if (role === 'admin') navigate('/admin')
@@ -32,6 +34,7 @@ export function useCurrentUser() {
       return user
     },
     enabled: isAuthenticated,
+    retry: false,
   })
 }
 
@@ -40,6 +43,7 @@ export function useLogout() {
   const navigate = useNavigate()
 
   return () => {
+    queryClient.clear()
     logout()
     navigate('/login')
   }

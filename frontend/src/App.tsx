@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { AppShell } from '@/components/common/AppShell'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { useCurrentUser } from '@/hooks/useAuth'
 import { LoginPage } from '@/pages/LoginPage'
 import { PublicPassPage } from '@/pages/PublicPassPage'
 
@@ -36,10 +38,20 @@ import { GuardDeliveriesPage } from '@/pages/guard/Deliveries'
 
 function App() {
   const { isAuthenticated, user } = useAuthStore()
+  const { isLoading: bootstrappingUser } = useCurrentUser()
+  const defaultPath = isAuthenticated && user ? `/${user.role}` : '/login'
+
+  if (isAuthenticated && bootstrappingUser && !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <LoginPage />} />
+      <Route path="/login" element={isAuthenticated && user ? <Navigate to={defaultPath} replace /> : <LoginPage />} />
       <Route path="/pass/:code" element={<PublicPassPage />} />
 
       <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AppShell /></ProtectedRoute>}>
@@ -75,7 +87,8 @@ function App() {
         <Route path="deliveries" element={<GuardDeliveriesPage />} />
       </Route>
 
-      <Route path="/" element={<Navigate to="/login" />} />
+      <Route path="/" element={<Navigate to={defaultPath} replace />} />
+      <Route path="*" element={<Navigate to={defaultPath} replace />} />
     </Routes>
   )
 }

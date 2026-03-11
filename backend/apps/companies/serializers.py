@@ -1,5 +1,7 @@
+from django.db import transaction
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from apps.companies.utils import get_administered_companies
 from .models import Company, Employee
 
 User = get_user_model()
@@ -37,7 +39,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "phone", "company", "company_name", "employee_id", "designation",
             "department", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "user", "company", "created_at", "updated_at"]
 
 
 class EmployeeCreateSerializer(serializers.Serializer):
@@ -52,6 +54,14 @@ class EmployeeCreateSerializer(serializers.Serializer):
     designation = serializers.CharField(required=False, default="")
     department = serializers.CharField(required=False, default="")
 
+    def validate_company(self, company):
+        request = self.context.get("request")
+        if request and request.user.role == "company":
+            if not get_administered_companies(request.user).filter(id=company.id).exists():
+                raise serializers.ValidationError("You can only create employees for your own company.")
+        return company
+
+    @transaction.atomic
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data["username"],
@@ -75,3 +85,10 @@ class EmployeeCreateSerializer(serializers.Serializer):
 class BulkEmployeeUploadSerializer(serializers.Serializer):
     file = serializers.FileField()
     company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.all())
+
+    def validate_company(self, company):
+        request = self.context.get("request")
+        if request and request.user.role == "company":
+            if not get_administered_companies(request.user).filter(id=company.id).exists():
+                raise serializers.ValidationError("You can only bulk upload employees for your own company.")
+        return company

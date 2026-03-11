@@ -1,10 +1,10 @@
 import csv
 import io
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from django.db.models import Count
 
 from apps.accounts.permissions import IsAdmin, IsAdminOrCompanyAdmin
 from .models import Company, Employee
@@ -23,8 +23,16 @@ class CompanyViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "email"]
     ordering_fields = ["name", "created_at"]
 
+    def get_permissions(self):
+        if self.action == "stats":
+            return [IsAdminOrCompanyAdmin()]
+        return [IsAdmin()]
+
     def get_queryset(self):
-        return Company.objects.select_related("admin").all()
+        qs = Company.objects.select_related("admin").all()
+        if self.request.user.role == "company":
+            qs = qs.filter(admin=self.request.user)
+        return qs
 
     @action(detail=True, methods=["get"])
     def stats(self, request, pk=None):
@@ -33,7 +41,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             "employee_count": company.employees.count(),
             "active_passes": company.visitor_passes.filter(status="approved").count(),
             "today_entries": company.visitor_passes.filter(
-                entry_logs__check_in_time__date=__import__("django").utils.timezone.now().date()
+                entry_logs__check_in_time__date=timezone.now().date()
             ).distinct().count(),
             "pending_deliveries": company.deliveries.filter(status__in=["expected", "arrived"]).count(),
         })
@@ -55,18 +63,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         qs = Employee.objects.select_related("user", "company").all()
         user = self.request.user
         if user.role == "company":
-            company = user.administered_companies.first()
-            if company:
-                qs = qs.filter(company=company)
+            qs = qs.filter(company__admin=user)
         return qs
 
     @action(detail=False, methods=["post"], url_path="bulk-upload")
     def bulk_upload(self, request):
-        serializer = BulkEmployeeUploadSerializer(data=request.data)
+        serializer = BulkEmployeeUploadSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         file = serializer.validated_data["file"]
         company = serializer.validated_data["company"]
-        decoded = file.read().decode("utf-8")
+        decoded = file.read().decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(decoded))
         created = 0
         errors = []

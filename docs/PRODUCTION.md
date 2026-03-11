@@ -125,7 +125,6 @@ source venv/bin/activate
 # Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install gunicorn  # Production server
 ```
 
 ### Step 4: Production Configuration
@@ -153,11 +152,15 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 FRONTEND_URL=https://yourdomain.com
 ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
 CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 # Security
 SECURE_SSL_REDIRECT=True
 CSRF_COOKIE_SECURE=True
 SESSION_COOKIE_SECURE=True
+SECURE_HSTS_SECONDS=31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS=True
+SECURE_HSTS_PRELOAD=True
 
 # Email (configure your SMTP)
 EMAIL_HOST=smtp.gmail.com

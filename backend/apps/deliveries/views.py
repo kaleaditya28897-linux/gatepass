@@ -1,8 +1,12 @@
 from rest_framework import viewsets, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsAdminOrCompanyAdminOrEmployee, IsGuard
+from apps.audit.utils import log_action
+from apps.companies.utils import get_employee_profile
+from apps.notifications.tasks import notify_delivery_arrived
 from .models import Delivery
 from .serializers import DeliverySerializer, DeliveryGateSerializer, VerifyOTPSerializer
 
@@ -22,23 +26,34 @@ class DeliveryViewSet(viewsets.ModelViewSet):
         qs = Delivery.objects.select_related("company", "employee__user").all()
         user = self.request.user
         if user.role == "company":
-            company = user.administered_companies.first()
-            if company:
-                qs = qs.filter(company=company)
+            qs = qs.filter(company__admin=user)
         elif user.role == "employee":
-            if hasattr(user, "employee_profile"):
-                qs = qs.filter(employee=user.employee_profile)
+            employee_profile = get_employee_profile(user)
+            if employee_profile is None:
+                return qs.none()
+            qs = qs.filter(employee=employee_profile)
         return qs
 
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role == "employee" and hasattr(user, "employee_profile"):
-            serializer.save(
-                employee=user.employee_profile,
-                company=user.employee_profile.company,
+        if user.role == "employee":
+            employee_profile = get_employee_profile(user)
+            if employee_profile is None:
+                raise ValidationError("Employee profile not found.")
+            delivery = serializer.save(
+                employee=employee_profile,
+                company=employee_profile.company,
             )
         else:
-            serializer.save()
+            delivery = serializer.save()
+        log_action(
+            user=user,
+            action="delivery_created",
+            resource_type="delivery",
+            resource_id=delivery.id,
+            description=f"Created delivery for {delivery.employee.user.get_full_name()}.",
+            request=self.request,
+        )
 
     @action(detail=True, methods=["post"])
     def arrived(self, request, pk=None):
@@ -47,7 +62,16 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Delivery is not in expected status."}, status=status.HTTP_400_BAD_REQUEST)
         delivery.status = Delivery.Status.ARRIVED
         delivery.save()
-        return Response(DeliverySerializer(delivery).data)
+        log_action(
+            user=request.user,
+            action="delivery_arrived",
+            resource_type="delivery",
+            resource_id=delivery.id,
+            description=f"Marked delivery {delivery.id} as arrived.",
+            request=request,
+        )
+        notify_delivery_arrived.delay(delivery.id)
+        return Response(DeliveryGateSerializer(delivery).data)
 
     @action(detail=True, methods=["post"])
     def delivered(self, request, pk=None):
@@ -56,7 +80,15 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Delivery has not arrived yet."}, status=status.HTTP_400_BAD_REQUEST)
         delivery.status = Delivery.Status.DELIVERED
         delivery.save()
-        return Response(DeliverySerializer(delivery).data)
+        log_action(
+            user=request.user,
+            action="delivery_delivered",
+            resource_type="delivery",
+            resource_id=delivery.id,
+            description=f"Marked delivery {delivery.id} as delivered.",
+            request=request,
+        )
+        return Response(DeliveryGateSerializer(delivery).data)
 
     @action(detail=True, methods=["post"], url_path="verify-otp")
     def verify_otp(self, request, pk=None):

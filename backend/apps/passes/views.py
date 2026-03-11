@@ -9,6 +9,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsAdminOrCompanyAdmin, IsAdminOrCompanyAdminOrEmployee, IsGuard
+from apps.audit.utils import log_action
+from apps.companies.utils import get_employee_profile
+from apps.notifications.tasks import notify_pass_approved
 from .models import VisitorPass
 from .serializers import VisitorPassSerializer, VisitorPassVerifySerializer, WalkInPassSerializer
 
@@ -39,21 +42,30 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
         ).all()
         user = self.request.user
         if user.role == "company":
-            company = user.administered_companies.first()
-            if company:
-                qs = qs.filter(host_company=company)
+            qs = qs.filter(host_company__admin=user)
         elif user.role == "employee":
-            if hasattr(user, "employee_profile"):
-                qs = qs.filter(host_employee=user.employee_profile)
+            employee_profile = get_employee_profile(user)
+            if employee_profile is None:
+                return qs.none()
+            qs = qs.filter(host_employee=employee_profile)
         return qs
 
     def perform_create(self, serializer):
         user = self.request.user
         kwargs = {"created_by": user}
-        if user.role == "employee" and hasattr(user, "employee_profile"):
-            kwargs["host_employee"] = user.employee_profile
-            kwargs["host_company"] = user.employee_profile.company
-        serializer.save(**kwargs)
+        employee_profile = get_employee_profile(user)
+        if user.role == "employee" and employee_profile is not None:
+            kwargs["host_employee"] = employee_profile
+            kwargs["host_company"] = employee_profile.company
+        visitor_pass = serializer.save(**kwargs)
+        log_action(
+            user=user,
+            action="pass_created",
+            resource_type="visitor_pass",
+            resource_id=visitor_pass.id,
+            description=f"Created visitor pass for {visitor_pass.visitor_name}.",
+            request=self.request,
+        )
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminOrCompanyAdmin])
     def approve(self, request, pk=None):
@@ -68,7 +80,16 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
         visitor_pass.approved_at = timezone.now()
         visitor_pass.save()
         generate_qr_code(visitor_pass)
-        return Response(VisitorPassSerializer(visitor_pass).data)
+        log_action(
+            user=request.user,
+            action="pass_approved",
+            resource_type="visitor_pass",
+            resource_id=visitor_pass.id,
+            description=f"Approved visitor pass for {visitor_pass.visitor_name}.",
+            request=request,
+        )
+        notify_pass_approved.delay(visitor_pass.id)
+        return Response(self.get_serializer(visitor_pass).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminOrCompanyAdmin])
     def reject(self, request, pk=None):
@@ -81,7 +102,16 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
         visitor_pass.status = VisitorPass.Status.REJECTED
         visitor_pass.rejected_reason = request.data.get("reason", "")
         visitor_pass.save()
-        return Response(VisitorPassSerializer(visitor_pass).data)
+        log_action(
+            user=request.user,
+            action="pass_rejected",
+            resource_type="visitor_pass",
+            resource_id=visitor_pass.id,
+            description=f"Rejected visitor pass for {visitor_pass.visitor_name}.",
+            request=request,
+            extra_data={"reason": visitor_pass.rejected_reason},
+        )
+        return Response(self.get_serializer(visitor_pass).data)
 
     @action(detail=False, methods=["get"], url_path="verify/(?P<code>[^/.]+)", permission_classes=[AllowAny])
     def verify(self, request, code=None):
@@ -91,11 +121,11 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
             ).get(pass_code=code)
         except VisitorPass.DoesNotExist:
             return Response({"detail": "Pass not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(VisitorPassVerifySerializer(visitor_pass).data)
+        return Response(VisitorPassVerifySerializer(visitor_pass, context={"request": request}).data)
 
     @action(detail=False, methods=["post"], url_path="walk-in", permission_classes=[IsGuard])
     def walk_in(self, request):
-        serializer = WalkInPassSerializer(data=request.data)
+        serializer = WalkInPassSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         visitor_pass = serializer.save(
             created_by=request.user,
@@ -105,4 +135,13 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
             approved_at=timezone.now(),
         )
         generate_qr_code(visitor_pass)
-        return Response(VisitorPassSerializer(visitor_pass).data, status=status.HTTP_201_CREATED)
+        log_action(
+            user=request.user,
+            action="walk_in_pass_created",
+            resource_type="visitor_pass",
+            resource_id=visitor_pass.id,
+            description=f"Created walk-in pass for {visitor_pass.visitor_name}.",
+            request=request,
+        )
+        notify_pass_approved.delay(visitor_pass.id)
+        return Response(self.get_serializer(visitor_pass).data, status=status.HTTP_201_CREATED)

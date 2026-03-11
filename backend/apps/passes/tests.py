@@ -52,3 +52,13 @@ class TestVisitorPasses:
         visitor_pass.refresh_from_db()
         assert visitor_pass.status == "approved"
         assert visitor_pass.approved_by == admin_user
+
+    def test_verify_pass_returns_qr_code_after_approval(self, api_client, authenticated_admin_client, visitor_pass):
+        approve_url = reverse("visitor-pass-approve", args=[visitor_pass.id])
+        authenticated_admin_client.post(approve_url)
+
+        verify_url = f"/api/v1/passes/verify/{visitor_pass.pass_code}/"
+        response = api_client.get(verify_url)
+
+        assert response.status_code == 200
+        assert response.data["qr_code_image"]

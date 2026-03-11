@@ -61,3 +61,9 @@ def authenticated_admin_client(api_client, admin_user):
 def authenticated_company_client(api_client, company_admin_user):
     api_client.force_authenticate(user=company_admin_user)
     return api_client
+
+
+@pytest.fixture
+def authenticated_guard_client(api_client, guard_user):
+    api_client.force_authenticate(user=guard_user)
+    return api_client

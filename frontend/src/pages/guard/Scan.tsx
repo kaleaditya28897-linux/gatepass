@@ -1,14 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { passesApi } from '@/api/passes'
 import { entriesApi } from '@/api/entries'
-import { gatesApi } from '@/api/gates'
+import { shiftsApi } from '@/api/gates'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { formatDateTime } from '@/utils/formatters'
@@ -16,12 +15,12 @@ import { QrCode, Check } from 'lucide-react'
 
 export function ScanPage() {
   const [passCode, setPassCode] = useState('')
-  const [selectedGate, setSelectedGate] = useState<string>('')
   const queryClient = useQueryClient()
 
-  const { data: gates } = useQuery({
-    queryKey: ['gates'],
-    queryFn: () => gatesApi.list(),
+  const { data: currentShift, isLoading: loadingShift } = useQuery({
+    queryKey: ['my-shift'],
+    queryFn: shiftsApi.myCurrent,
+    retry: false,
   })
 
   const verifyMutation = useMutation({
@@ -44,10 +43,12 @@ export function ScanPage() {
   }
 
   const handleCheckIn = () => {
-    if (passCode && selectedGate) {
-      checkInMutation.mutate({ pass_code: passCode, gate: parseInt(selectedGate) })
+    if (passCode && currentShift) {
+      checkInMutation.mutate({ pass_code: passCode, gate: currentShift.gate })
     }
   }
+
+  if (loadingShift) return <LoadingSpinner className="h-64" />
 
   return (
     <div className="space-y-6">
@@ -61,13 +62,10 @@ export function ScanPage() {
               <Input value={passCode} onChange={(e) => setPassCode(e.target.value)} placeholder="Enter or scan pass code" />
             </div>
             <div className="space-y-2">
-              <Label>Gate</Label>
-              <Select value={selectedGate} onValueChange={setSelectedGate}>
-                <SelectTrigger><SelectValue placeholder="Select gate" /></SelectTrigger>
-                <SelectContent>
-                  {gates?.results.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Current Gate</Label>
+              <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                {currentShift?.gate_name || 'No active shift assigned. Start your shift before checking visitors in.'}
+              </div>
             </div>
             <Button onClick={handleVerify} disabled={!passCode || verifyMutation.isPending} className="w-full">
               Verify Pass
@@ -90,9 +88,14 @@ export function ScanPage() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Valid Until</span><span className="font-medium">{formatDateTime(verifyMutation.data.valid_until)}</span></div>
               </div>
               {verifyMutation.data.status === 'approved' && (
-                <Button onClick={handleCheckIn} disabled={!selectedGate || checkInMutation.isPending} className="w-full">
+                <Button onClick={handleCheckIn} disabled={!currentShift || checkInMutation.isPending} className="w-full">
                   <Check className="h-4 w-4 mr-2" /> Check In
                 </Button>
+              )}
+              {!currentShift && (
+                <p className="text-sm text-muted-foreground text-center">
+                  You need an active shift before you can check visitors in.
+                </p>
               )}
               {checkInMutation.isSuccess && <p className="text-green-600 text-center font-medium">Checked in successfully!</p>}
             </CardContent>

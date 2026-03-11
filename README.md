@@ -46,7 +46,7 @@ cd gatepass
 cp .env.example .env
 ```
 
-Edit `.env` file with your settings (defaults work for local development).
+Edit `.env` file with your settings. This file is used by `docker-compose` for the local container stack.
 
 ### 3. Start Services
 ```bash
@@ -125,6 +125,9 @@ export DB_PASSWORD=gatepass
 export DB_HOST=localhost
 export DB_PORT=5432
 export CELERY_BROKER_URL=redis://localhost:6379/0
+export CELERY_RESULT_BACKEND=redis://localhost:6379/0
+export FRONTEND_URL=http://localhost:5173
+export CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
 
 #### 5. Run Migrations
@@ -178,6 +181,7 @@ export DJANGO_SETTINGS_MODULE=gatepass.settings.production
 export SECRET_KEY=your-secure-secret-key
 export ALLOWED_HOSTS=yourdomain.com
 export CORS_ALLOWED_ORIGINS=https://yourdomain.com
+export CSRF_TRUSTED_ORIGINS=https://yourdomain.com
 ```
 
 #### 2. Collect Static Files

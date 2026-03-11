@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { VisitorPass, PaginatedResponse } from '@/types'
+import type { VisitorPass, VerifiedVisitorPass, PaginatedResponse } from '@/types'
 
 export const passesApi = {
   list: async (params?: Record<string, string>): Promise<PaginatedResponse<VisitorPass>> => {
@@ -36,7 +36,7 @@ export const passesApi = {
     return response.data
   },
 
-  verify: async (code: string): Promise<VisitorPass> => {
+  verify: async (code: string): Promise<VerifiedVisitorPass> => {
     const response = await apiClient.get(`/passes/verify/${code}/`)
     return response.data
   },

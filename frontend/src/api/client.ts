@@ -1,7 +1,11 @@
 import axios from 'axios'
+import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/store/authStore'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+
+type RetriableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
 
 export const apiClient = axios.create({
   baseURL: API_URL,
@@ -9,6 +13,11 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+function clearSession() {
+  useAuthStore.getState().logout()
+  queryClient.clear()
+}
 
 apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
@@ -20,22 +29,27 @@ apiClient.interceptors.request.use((config) => {
 
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
+  async (error: AxiosError) => {
+    const originalRequest = error.config as RetriableRequestConfig | undefined
+
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      originalRequest._retry = true
+
       const refreshToken = useAuthStore.getState().refreshToken
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${API_URL}/auth/token/refresh/`, {
-            refresh: refreshToken,
-          })
-          useAuthStore.getState().setToken(response.data.access)
-          error.config.headers.Authorization = `Bearer ${response.data.access}`
-          return apiClient.request(error.config)
-        } catch {
-          useAuthStore.getState().logout()
-        }
-      } else {
-        useAuthStore.getState().logout()
+      if (!refreshToken) {
+        clearSession()
+        return Promise.reject(error)
+      }
+
+      try {
+        const response = await axios.post(`${API_URL}/auth/token/refresh/`, {
+          refresh: refreshToken,
+        })
+        useAuthStore.getState().setToken(response.data.access)
+        originalRequest.headers.Authorization = `Bearer ${response.data.access}`
+        return apiClient.request(originalRequest)
+      } catch {
+        clearSession()
       }
     }
     return Promise.reject(error)

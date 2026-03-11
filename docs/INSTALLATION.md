@@ -256,16 +256,19 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Create environment file
-cp ../.env.example .env
-
-# Edit .env with your database password
-nano .env
-```
-
-Update these values in `.env`:
-```
-DB_PASSWORD=your_secure_password
+cat > .env << EOF
 SECRET_KEY=your_random_secret_key
+DJANGO_SETTINGS_MODULE=gatepass.settings.development
+DB_NAME=gatepass
+DB_USER=gatepass
+DB_PASSWORD=your_secure_password
+DB_HOST=localhost
+DB_PORT=5432
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+FRONTEND_URL=http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+EOF
 ```
 
 Generate a secret key:
@@ -435,9 +438,9 @@ pip install -r requirements.txt
 
 After installation:
 
-1. **Change Default Passwords** - See [SECURITY.md](SECURITY.md)
+1. **Change Default Passwords** - Update all seeded/demo credentials before sharing access
 2. **Configure for Production** - See [PRODUCTION.md](PRODUCTION.md)
-3. **Set Up Backups** - See [BACKUP.md](BACKUP.md)
+3. **Set Up Backups** - Configure PostgreSQL and media backups for your environment
 4. **Learn the Features** - See [USER_GUIDE.md](USER_GUIDE.md)
 
 ---

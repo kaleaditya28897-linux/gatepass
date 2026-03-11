@@ -12,6 +12,37 @@ from apps.deliveries.models import Delivery
 from apps.companies.models import Company
 
 
+def _get_days(request):
+    try:
+        days = int(request.query_params.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+    return max(1, min(days, 365))
+
+
+def _filter_entries_for_user(user):
+    qs = EntryLog.objects.all()
+    if user.role != "company":
+        return qs
+
+    companies = Company.objects.filter(admin=user)
+    if not companies.exists():
+        return qs.none()
+
+    return qs.filter(
+        Q(visitor_pass__host_company__admin=user)
+        | Q(delivery__company__admin=user)
+        | Q(company_name__in=companies.values("name"))
+    ).distinct()
+
+
+def _filter_deliveries_for_user(user):
+    qs = Delivery.objects.all()
+    if user.role != "company":
+        return qs
+    return qs.filter(company__admin=user)
+
+
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def overview(request):
@@ -29,10 +60,10 @@ def overview(request):
 @api_view(["GET"])
 @permission_classes([IsAdminOrCompanyAdmin])
 def entries_by_date(request):
-    days = int(request.query_params.get("days", 30))
+    days = _get_days(request)
     start_date = timezone.now() - timedelta(days=days)
     data = (
-        EntryLog.objects.filter(check_in_time__gte=start_date)
+        _filter_entries_for_user(request.user).filter(check_in_time__gte=start_date)
         .annotate(date=TruncDate("check_in_time"))
         .values("date")
         .annotate(count=Count("id"))
@@ -44,10 +75,10 @@ def entries_by_date(request):
 @api_view(["GET"])
 @permission_classes([IsAdminOrCompanyAdmin])
 def entries_by_gate(request):
-    days = int(request.query_params.get("days", 30))
+    days = _get_days(request)
     start_date = timezone.now() - timedelta(days=days)
     data = (
-        EntryLog.objects.filter(check_in_time__gte=start_date)
+        _filter_entries_for_user(request.user).filter(check_in_time__gte=start_date)
         .values("gate__name")
         .annotate(count=Count("id"))
         .order_by("-count")
@@ -58,7 +89,7 @@ def entries_by_gate(request):
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def peak_hours(request):
-    days = int(request.query_params.get("days", 30))
+    days = _get_days(request)
     start_date = timezone.now() - timedelta(days=days)
     data = (
         EntryLog.objects.filter(check_in_time__gte=start_date)
@@ -73,9 +104,9 @@ def peak_hours(request):
 @api_view(["GET"])
 @permission_classes([IsAdminOrCompanyAdmin])
 def delivery_stats(request):
-    days = int(request.query_params.get("days", 30))
+    days = _get_days(request)
     start_date = timezone.now() - timedelta(days=days)
-    qs = Delivery.objects.filter(created_at__gte=start_date)
+    qs = _filter_deliveries_for_user(request.user).filter(created_at__gte=start_date)
     return Response({
         "total": qs.count(),
         "by_type": list(qs.values("delivery_type").annotate(count=Count("id")).order_by("-count")),

@@ -1,8 +1,46 @@
 from rest_framework import serializers
+from apps.companies.utils import get_administered_companies, get_employee_profile
 from .models import VisitorPass
 
 
-class VisitorPassSerializer(serializers.ModelSerializer):
+class VisitorPassValidationMixin:
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        host_company = attrs.get("host_company", getattr(instance, "host_company", None))
+        host_employee = attrs.get("host_employee", getattr(instance, "host_employee", None))
+
+        if host_employee and host_company and host_employee.company_id != host_company.id:
+            raise serializers.ValidationError({
+                "host_employee": "Selected host employee must belong to the selected company."
+            })
+
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return attrs
+
+        user = request.user
+        if user.role == "company":
+            if not host_company or not get_administered_companies(user).filter(id=host_company.id).exists():
+                raise serializers.ValidationError({
+                    "host_company": "You can only manage passes for your own company."
+                })
+        elif user.role == "employee":
+            employee_profile = get_employee_profile(user)
+            if employee_profile is None:
+                raise serializers.ValidationError("Employee profile not found.")
+            if host_company and host_company.id != employee_profile.company_id:
+                raise serializers.ValidationError({
+                    "host_company": "You can only manage passes for your own company."
+                })
+            if host_employee and host_employee.id != employee_profile.id:
+                raise serializers.ValidationError({
+                    "host_employee": "Employees can only create passes for themselves."
+                })
+
+        return attrs
+
+
+class VisitorPassSerializer(VisitorPassValidationMixin, serializers.ModelSerializer):
     host_company_name = serializers.CharField(source="host_company.name", read_only=True)
     host_employee_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
@@ -56,7 +94,7 @@ class VisitorPassVerifySerializer(serializers.ModelSerializer):
             "id", "visitor_name", "visitor_phone", "visitor_company",
             "id_type", "id_number", "photo", "vehicle_number", "purpose",
             "host_company_name", "host_employee_name",
-            "pass_type", "status", "valid_from", "valid_until",
+            "qr_code_image", "pass_type", "status", "valid_from", "valid_until",
         ]
 
     def get_host_employee_name(self, obj):
@@ -65,7 +103,7 @@ class VisitorPassVerifySerializer(serializers.ModelSerializer):
         return None
 
 
-class WalkInPassSerializer(serializers.ModelSerializer):
+class WalkInPassSerializer(VisitorPassValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = VisitorPass
         fields = [
