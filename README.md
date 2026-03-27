@@ -90,6 +90,18 @@ docker compose exec backend python manage.py seed_demo_data  # optional
 | Employee | `amit.kumar` | `password123` |
 | Guard | `guard.raju` | `password123` |
 
+### Demo walkthrough
+
+Use the seeded accounts to exercise the main workflow end-to-end:
+
+1. Sign in as `company` or `employee` and create a visitor pass.
+2. Sign in as `admin` or `company` and approve the pass.
+3. Open the public QR verification URL for the pass at `/pass/{code}`.
+4. Sign in as `guard` and check the visitor in at the gate.
+5. Review entry activity from the dashboards and entries pages.
+
+You can also test the delivery flow by creating a delivery, marking it as arrived at the gate, then verifying the OTP before release.
+
 ---
 
 ## Manual Development Setup
@@ -255,6 +267,23 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f fro
 - `SECRET_KEY` and `ALLOWED_HOSTS` are required in production settings
 - Database connectivity in production supports `DB_CONN_MAX_AGE` and `DB_SSLMODE`
 - The backend health endpoint is available at `GET /api/v1/health/`
+
+### Deployment troubleshooting
+
+If the production stack does not come up cleanly, these checks usually pinpoint the problem quickly:
+
+- `docker compose --env-file .env.production -f docker-compose.prod.yml ps` to confirm service health
+- `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f backend` for Django startup, migrations, or DB connectivity issues
+- `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f frontend` for Nginx or static asset issues
+- `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f celery` for task-worker or Redis issues
+- `curl http://localhost/api/v1/health/` to confirm backend health behind the frontend proxy
+
+Common fixes:
+
+- If the backend exits immediately, re-check `SECRET_KEY`, `ALLOWED_HOSTS`, and database environment variables.
+- If the frontend loads but API requests fail, confirm `VITE_API_URL=/api/v1` and that the `backend` service is healthy.
+- If static files or media are missing, restart after confirming the shared `static_data` and `media_data` volumes were created.
+- If Celery cannot start, verify both PostgreSQL and Redis are healthy and reachable from the worker container.
 
 ### Manual deployment alternative
 
