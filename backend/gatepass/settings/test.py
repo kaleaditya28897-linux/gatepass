@@ -1,3 +1,5 @@
+import tempfile
+
 from .base import *  # noqa: F401, F403
 
 DEBUG = True
@@ -19,6 +21,7 @@ PASSWORD_HASHERS = [
 # Use console backends for testing
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 SMS_BACKEND = "console"
+MEDIA_ROOT = tempfile.mkdtemp(prefix="gatepass-test-media-")
 
 # Disable Celery task execution during tests
 CELERY_TASK_ALWAYS_EAGER = True

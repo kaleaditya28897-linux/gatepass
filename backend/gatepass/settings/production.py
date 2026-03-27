@@ -1,4 +1,5 @@
 from .base import *  # noqa: F401, F403
+from django.core.exceptions import ImproperlyConfigured
 from decouple import config
 
 DEBUG = False
@@ -27,3 +28,13 @@ EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+
+DATABASES["default"]["CONN_MAX_AGE"] = config("DB_CONN_MAX_AGE", default=60, cast=int)
+DATABASES["default"].setdefault("OPTIONS", {})
+DATABASES["default"]["OPTIONS"]["sslmode"] = config("DB_SSLMODE", default="prefer")
+
+if SECRET_KEY == "django-insecure-change-me-in-production":
+    raise ImproperlyConfigured("SECRET_KEY must be set to a secure value in production.")
+
+if not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("ALLOWED_HOSTS must be configured in production.")
