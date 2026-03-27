@@ -10,7 +10,7 @@ COPY . .
 
 EXPOSE 5173
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev"]
 
 FROM base AS build
 ARG VITE_API_URL=http://localhost:8000/api/v1

@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework import viewsets, status
@@ -108,7 +109,8 @@ class EntryLogViewSet(viewsets.ReadOnlyModelViewSet):
                 request=request,
                 extra_data={"visitor_pass_id": entry.visitor_pass_id, "gate_id": gate.id},
             )
-            notify_visitor_checked_in.delay(entry.visitor_pass_id)
+            pass_id = entry.visitor_pass_id
+            transaction.on_commit(lambda: notify_visitor_checked_in.delay(pass_id))
         else:
             log_action(
                 user=request.user,
@@ -119,7 +121,8 @@ class EntryLogViewSet(viewsets.ReadOnlyModelViewSet):
                 request=request,
                 extra_data={"delivery_id": entry.delivery_id, "gate_id": gate.id},
             )
-            notify_delivery_arrived.delay(entry.delivery_id)
+            delivery_id = entry.delivery_id
+            transaction.on_commit(lambda: notify_delivery_arrived.delay(delivery_id))
         return Response(EntryLogSerializer(entry).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="check-out")

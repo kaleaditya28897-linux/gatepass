@@ -2,6 +2,7 @@ import io
 import qrcode
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -88,7 +89,7 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
             description=f"Approved visitor pass for {visitor_pass.visitor_name}.",
             request=request,
         )
-        notify_pass_approved.delay(visitor_pass.id)
+        transaction.on_commit(lambda: notify_pass_approved.delay(visitor_pass.id))
         return Response(self.get_serializer(visitor_pass).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminOrCompanyAdmin])
@@ -143,5 +144,5 @@ class VisitorPassViewSet(viewsets.ModelViewSet):
             description=f"Created walk-in pass for {visitor_pass.visitor_name}.",
             request=request,
         )
-        notify_pass_approved.delay(visitor_pass.id)
+        transaction.on_commit(lambda: notify_pass_approved.delay(visitor_pass.id))
         return Response(self.get_serializer(visitor_pass).data, status=status.HTTP_201_CREATED)

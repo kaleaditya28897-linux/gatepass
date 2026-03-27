@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
@@ -70,7 +71,8 @@ class DeliveryViewSet(viewsets.ModelViewSet):
             description=f"Marked delivery {delivery.id} as arrived.",
             request=request,
         )
-        notify_delivery_arrived.delay(delivery.id)
+        delivery_id = delivery.id
+        transaction.on_commit(lambda: notify_delivery_arrived.delay(delivery_id))
         return Response(DeliveryGateSerializer(delivery).data)
 
     @action(detail=True, methods=["post"])

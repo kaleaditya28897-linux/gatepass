@@ -15,6 +15,423 @@ A comprehensive full-stack application for managing visitor access, deliveries, 
 ## Tech Stack
 
 ### Backend
+- **Framework**: Django 5.1 + Django REST Framework 3.15
+- **Database**: PostgreSQL 16
+- **Task Queue**: Celery 5 + Redis 7
+- **Authentication**: JWT (djangorestframework-simplejwt)
+
+### Frontend
+- **Framework**: React 18 + TypeScript 5.6
+- **Build Tool**: Vite 6
+- **UI Components**: shadcn/ui + Tailwind CSS 3.4
+- **State Management**: Zustand 5 (auth) + TanStack Query v5 (server state)
+- **Forms**: React Hook Form + Zod
+- **Charts**: Recharts
+
+---
+
+## Quick Start (Docker)
+
+### Prerequisites
+- Docker & Docker Compose v2 installed
+- Git
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/kaleaditya28897-linux/gatepass.git
+cd gatepass
+```
+
+### 2. Configure Environment
+```bash
+cp .env.example .env
+# Edit .env and set a unique SECRET_KEY before starting
+```
+
+### 3. Start Services
+```bash
+docker compose up -d --build
+```
+
+This starts:
+- PostgreSQL (port 5432)
+- Redis (port 6379)
+- Django backend (port 8000)
+- Celery worker
+- React frontend (port 5173)
+
+### 4. Initialize Database
+```bash
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py create_admin
+docker compose exec backend python manage.py seed_demo_data  # optional demo data
+```
+
+### 5. Access the Application
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:8000/api/v1/
+- **Django Admin**: http://localhost:8000/admin/
+
+### Demo Credentials
+| Role | Username | Password |
+|------|----------|----------|
+| Admin | admin | admin123 |
+| Company Admin | techcorp_admin | password123 |
+| Employee | amit.kumar | password123 |
+| Guard | guard.raju | password123 |
+
+---
+
+## Manual Setup (Development)
+
+### Backend Setup
+
+#### Prerequisites
+- Python 3.12+
+- PostgreSQL 14+
+- Redis 7+
+
+#### 1. Create Virtual Environment
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+#### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### 3. Configure Database
+```sql
+CREATE DATABASE gatepass;
+CREATE USER gatepass WITH PASSWORD 'gatepass';
+GRANT ALL PRIVILEGES ON DATABASE gatepass TO gatepass;
+```
+
+#### 4. Environment Variables
+Create `backend/.env` (for local dev, use `localhost` as DB/Redis host):
+```bash
+DJANGO_SETTINGS_MODULE=gatepass.settings.development
+SECRET_KEY=your-secret-key-here
+DB_NAME=gatepass
+DB_USER=gatepass
+DB_PASSWORD=gatepass
+DB_HOST=localhost
+DB_PORT=5432
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+FRONTEND_URL=http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+```
+
+#### 5. Run Migrations & Start Server
+```bash
+python manage.py migrate
+python manage.py create_admin
+python manage.py runserver
+```
+
+#### 6. Start Celery Worker (separate terminal)
+```bash
+celery -A gatepass worker --loglevel=info
+```
+
+### Frontend Setup
+
+#### Prerequisites
+- Node.js 20+
+
+#### 1. Install Dependencies
+```bash
+cd frontend
+npm install
+```
+
+#### 2. Configure API URL
+Create `frontend/.env.local`:
+```
+VITE_API_URL=http://localhost:8000/api/v1
+```
+
+#### 3. Start Development Server
+```bash
+npm run dev
+```
+
+---
+
+## Testing
+
+### Backend
+```bash
+cd backend
+pytest                                                        # full suite
+pytest apps/passes/tests.py                                  # single app
+pytest apps/passes/tests.py::TestClass::test_method          # single test
+pytest --cov=apps --cov-report=html                          # with coverage
+```
+
+### Frontend
+```bash
+cd frontend
+npm test                                      # watch mode
+npm test -- --run                             # run once
+npm test -- src/path/to/file.test.tsx --run  # single file
+```
+
+---
+
+## Production Deployment
+
+### Backend (Gunicorn + Nginx)
+
+```bash
+export DJANGO_SETTINGS_MODULE=gatepass.settings.production
+export SECRET_KEY=your-secure-secret-key
+export ALLOWED_HOSTS=yourdomain.com
+export CORS_ALLOWED_ORIGINS=https://yourdomain.com
+
+python manage.py collectstatic --noinput
+gunicorn gatepass.wsgi:application --bind 0.0.0.0:8000 --workers 4
+```
+
+#### Nginx Configuration
+```nginx
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+
+    location /static/ {
+        alias /path/to/backend/staticfiles/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Frontend (Static Build)
+```bash
+cd frontend
+npm run build   # outputs to dist/
+```
+
+#### Nginx Configuration
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+    root /path/to/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+### Celery (Systemd Service)
+
+Create `/etc/systemd/system/gatepass-celery.service`:
+```ini
+[Unit]
+Description=GatePass Celery Worker
+After=network.target
+
+[Service]
+Type=forking
+User=www-data
+WorkingDirectory=/path/to/backend
+ExecStart=/path/to/venv/bin/celery -A gatepass worker --loglevel=info --detach
+ExecStop=/bin/kill -s TERM $MAINPID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable gatepass-celery
+sudo systemctl start gatepass-celery
+```
+
+---
+
+## API Reference
+
+### Authentication
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/auth/login/` | POST | Login with username/password → returns JWT tokens |
+| `/api/v1/auth/token/refresh/` | POST | Refresh access token |
+| `/api/v1/auth/me/` | GET | Current user info |
+
+### Companies
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/companies/` | GET, POST | List/create companies |
+| `/api/v1/companies/{id}/stats/` | GET | Company statistics |
+| `/api/v1/companies/employees/` | GET, POST | List/create employees |
+| `/api/v1/companies/employees/bulk-upload/` | POST | CSV bulk upload |
+
+### Gates & Guards
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/gates/` | GET, POST | List/create gates |
+| `/api/v1/guards/` | GET, POST | List/create guards |
+| `/api/v1/shifts/` | GET, POST | Shift management |
+| `/api/v1/shifts/my-current/` | GET | Current guard's active shift |
+
+### Visitor Passes
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/passes/` | GET, POST | List/create passes |
+| `/api/v1/passes/{id}/approve/` | POST | Approve pass (triggers SMS/email) |
+| `/api/v1/passes/{id}/reject/` | POST | Reject pass |
+| `/api/v1/passes/verify/{code}/` | GET | Verify pass by QR code (public) |
+| `/api/v1/passes/walk-in/` | POST | Create walk-in pass |
+
+### Entry Logs
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/entries/check-in/` | POST | Check in visitor or delivery |
+| `/api/v1/entries/{id}/check-out/` | POST | Check out visitor |
+| `/api/v1/entries/active/` | GET | Currently active visitors |
+
+### Deliveries
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/deliveries/` | GET, POST | List/create deliveries |
+| `/api/v1/deliveries/{id}/arrived/` | POST | Mark arrived at gate |
+| `/api/v1/deliveries/{id}/verify-otp/` | POST | Verify OTP and release |
+| `/api/v1/deliveries/pending-gate/` | GET | Pending deliveries at gate |
+
+### Analytics
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/analytics/overview/` | GET | Dashboard summary stats |
+| `/api/v1/analytics/entries-by-date/` | GET | Entry volume over time |
+| `/api/v1/analytics/peak-hours/` | GET | Peak traffic hours |
+| `/api/v1/analytics/delivery-stats/` | GET | Delivery metrics |
+
+---
+
+## Management Commands
+
+```bash
+# Create admin user
+python manage.py create_admin --username admin --password securepass --email admin@example.com
+
+# Load demo data
+python manage.py seed_demo_data
+
+# Expire old passes (schedule hourly via cron)
+python manage.py expire_passes
+```
+
+### Cron Job
+```cron
+0 * * * * cd /path/to/backend && /path/to/venv/bin/python manage.py expire_passes
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `SECRET_KEY` | Django secret key | Yes |
+| `DJANGO_SETTINGS_MODULE` | Settings module | Yes |
+| `DB_NAME` | PostgreSQL database | Yes |
+| `DB_USER` / `DB_PASSWORD` | PostgreSQL credentials | Yes |
+| `DB_HOST` / `DB_PORT` | PostgreSQL host/port | Yes |
+| `CELERY_BROKER_URL` | Redis URL for task queue | Yes |
+| `CELERY_RESULT_BACKEND` | Redis URL for task results | Yes |
+| `FRONTEND_URL` | Used in QR code links | Yes |
+| `CORS_ALLOWED_ORIGINS` | Allowed frontend origins | Yes |
+| `SMS_BACKEND` | `console` or `twilio` | No (default: `console`) |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | Twilio credentials | Only if SMS_BACKEND=twilio |
+| `TWILIO_FROM_NUMBER` | Twilio sender number | Only if SMS_BACKEND=twilio |
+| `EMAIL_HOST` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP settings | No |
+| `SECURE_SSL_REDIRECT` | Force HTTPS in production | No (default: `False`) |
+
+---
+
+## Project Structure
+
+```
+gatepass/
+├── backend/
+│   ├── apps/
+│   │   ├── accounts/      # User model, JWT auth, role permissions
+│   │   ├── companies/     # Company & Employee management
+│   │   ├── gates/         # Gate, Guard, GuardShift
+│   │   ├── passes/        # Visitor passes, QR code generation
+│   │   ├── entries/       # Check-in/out logs
+│   │   ├── deliveries/    # Delivery tracking + OTP
+│   │   ├── notifications/ # Celery tasks: SMS & email
+│   │   ├── analytics/     # Dashboard queries
+│   │   ├── audit/         # Activity audit trail
+│   │   └── core/          # TimestampedModel base, pagination
+│   ├── gatepass/
+│   │   └── settings/      # base.py, development.py, production.py, test.py
+│   ├── staticfiles/       # Collected static files (collectstatic output)
+│   └── requirements.txt
+├── frontend/
+│   └── src/
+│       ├── api/           # Axios modules per resource
+│       ├── components/    # Shared UI components
+│       ├── pages/         # Role-based route pages (admin/, company/, employee/, guard/)
+│       ├── store/         # Zustand stores (authStore, uiStore)
+│       ├── hooks/         # Custom React hooks
+│       └── types/         # Shared TypeScript interfaces
+├── .github/
+│   └── copilot-instructions.md   # Copilot development guide
+├── .vscode/
+│   └── mcp.json                  # MCP servers (Playwright, PostgreSQL)
+├── docker-compose.yml
+└── .env.example
+```
+
+---
+
+## License
+
+MIT License - see LICENSE file for details.
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+
+A comprehensive full-stack application for managing visitor access, deliveries, and security operations in business centers and corporate buildings.
+
+## Features
+
+- **Multi-Role Access Control**: Admin, Company Admin, Employee, and Guard roles with distinct permissions
+- **Visitor Pass Management**: Pre-approved passes, walk-in registration, QR code generation
+- **Entry/Exit Logging**: Real-time tracking of visitor check-ins and check-outs
+- **Delivery Tracking**: Food orders, couriers, documents with OTP verification
+- **Notifications**: SMS and email alerts for pass approvals, visitor arrivals
+- **Analytics Dashboard**: Entry statistics, peak hours, delivery metrics
+- **Audit Logging**: Complete activity trail for compliance and security
+
+## Tech Stack
+
+### Backend
 - **Framework**: Django 5.1 + Django REST Framework
 - **Database**: PostgreSQL 16
 - **Task Queue**: Celery + Redis
