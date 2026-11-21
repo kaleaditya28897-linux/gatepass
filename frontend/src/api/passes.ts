@@ -12,7 +12,7 @@ export const passesApi = {
     return response.data
   },
 
-  create: async (data: Partial<VisitorPass>): Promise<VisitorPass> => {
+  create: async (data: Record<string, unknown>): Promise<VisitorPass> => {
     const response = await apiClient.post('/passes/', data)
     return response.data
   },
@@ -24,6 +24,11 @@ export const passesApi = {
 
   delete: async (id: number): Promise<void> => {
     await apiClient.delete(`/passes/${id}/`)
+  },
+
+  cancel: async (id: number): Promise<VisitorPass> => {
+    const response = await apiClient.post(`/passes/${id}/cancel/`)
+    return response.data
   },
 
   approve: async (id: number): Promise<VisitorPass> => {
@@ -41,7 +46,8 @@ export const passesApi = {
     return response.data
   },
 
-  walkIn: async (data: Partial<VisitorPass>): Promise<VisitorPass> => {
+  /** Register a visitor at the gate; with `gate` set they are checked in straight away. */
+  walkIn: async (data: Record<string, unknown>): Promise<VisitorPass & { entry: number | null }> => {
     const response = await apiClient.post('/passes/walk-in/', data)
     return response.data
   },

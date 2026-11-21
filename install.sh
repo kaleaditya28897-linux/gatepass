@@ -1,11 +1,14 @@
 #!/bin/bash
 
 #############################################################
-#  GatePass - Guided Installation Script
+#  GatePass - Guided DEVELOPMENT Installation Script
 #  Supports: Ubuntu/Debian, Fedora, Arch Linux
 #
-#  This script will guide you through installing GatePass
-#  on your system with minimal technical knowledge required.
+#  This script installs a development / evaluation copy of
+#  GatePass directly on this machine (debug mode, admin/admin123).
+#
+#  DO NOT use it for the live building. For production run
+#  ./deploy.sh instead (see docs/PRODUCTION.md).
 #############################################################
 
 set -e
@@ -668,7 +671,7 @@ print_completion() {
     echo ""
     echo -e "${CYAN}🌐 Access URLs:${NC}"
     echo "   Frontend:  http://localhost:5173"
-    echo "   Admin:     http://localhost:8000/admin/"
+    echo "   Admin:     http://localhost:8000/django-admin/"
     echo "   API:       http://localhost:8000/api/v1/"
     echo ""
     echo -e "${CYAN}🔑 Default Login Credentials:${NC}"

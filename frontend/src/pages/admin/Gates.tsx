@@ -1,110 +1,118 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { ColumnDef } from '@tanstack/react-table'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { gatesApi } from '@/api/gates'
+import { toast } from '@/store/toastStore'
+import { getErrorMessage } from '@/lib/errors'
+import { tableProps, useList } from '@/hooks/useList'
 import { gateSchema, GateInput } from '@/utils/validators'
-import { PageHeader } from '@/components/common/PageHeader'
-import { DataTable } from '@/components/common/DataTable'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2 } from 'lucide-react'
 import { GATE_TYPES } from '@/utils/constants'
 import type { Gate } from '@/types'
-import { ColumnDef } from '@tanstack/react-table'
-import { usePagination } from '@/hooks/usePagination'
+import { PageHeader } from '@/components/common/PageHeader'
+import { DataTable } from '@/components/common/DataTable'
+import { SearchInput, Toolbar } from '@/components/common/SearchInput'
+import { FormField } from '@/components/common/FormField'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function GatesPage() {
-  const [open, setOpen] = useState(false)
-  const { page, setPage } = usePagination()
+  const [editing, setEditing] = useState<Gate | 'new' | null>(null)
+  const [deleting, setDeleting] = useState<Gate | null>(null)
   const queryClient = useQueryClient()
+  const list = useList<Gate>('gates', gatesApi.list)
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['gates'] })
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['gates', page],
-    queryFn: () => gatesApi.list({ page: page.toString() }),
-  })
-
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<GateInput>({
-    resolver: zodResolver(gateSchema),
-    defaultValues: { gate_type: 'pedestrian' },
-  })
-
-  const createMutation = useMutation({
-    mutationFn: gatesApi.create,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['gates'] }); setOpen(false); reset(); },
-  })
-
-  const deleteMutation = useMutation({
+  const remove = useMutation({
     mutationFn: gatesApi.delete,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gates'] }),
+    onSuccess: () => { refresh(); setDeleting(null); toast.success('Gate deleted.') },
+    onError: (e) => toast.error(getErrorMessage(e)),
   })
-
-  const onSubmit = (formData: GateInput) => {
-    createMutation.mutate(formData)
-  }
 
   const columns: ColumnDef<Gate>[] = [
-    { accessorKey: 'name', header: 'Name' },
+    { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
     { accessorKey: 'code', header: 'Code' },
-    { accessorKey: 'location', header: 'Location' },
+    { accessorKey: 'location', header: 'Location', cell: ({ row }) => row.original.location || '-' },
     { accessorKey: 'gate_type', header: 'Type', cell: ({ row }) => <Badge variant="outline" className="capitalize">{row.original.gate_type}</Badge> },
-    { accessorKey: 'is_active', header: 'Status', cell: ({ row }) => <Badge variant={row.original.is_active ? 'default' : 'secondary'}>{row.original.is_active ? 'Active' : 'Inactive'}</Badge> },
+    { accessorKey: 'is_active', header: 'Status', cell: ({ row }) => <Badge variant={row.original.is_active ? 'default' : 'secondary'}>{row.original.is_active ? 'Active' : 'Closed'}</Badge> },
     {
       id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
       cell: ({ row }) => (
-        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(row.original.id)}><Trash2 className="h-4 w-4" /></Button>
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="icon" aria-label={`Edit ${row.original.name}`} onClick={() => setEditing(row.original)}><Pencil className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" aria-label={`Delete ${row.original.name}`} onClick={() => setDeleting(row.original)}><Trash2 className="h-4 w-4" /></Button>
+        </div>
       ),
     },
   ]
-
-  if (isLoading) return <LoadingSpinner className="h-64" />
 
   return (
     <div>
       <PageHeader
         title="Gates"
-        description="Manage entry/exit gates"
-        action={
-          <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
-            <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" /> Add Gate</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Gate</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input {...register('name')} />
-                  {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Code</Label>
-                  <Input {...register('code')} />
-                  {errors.code && <p className="text-sm text-destructive">{errors.code.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Location</Label>
-                  <Input {...register('location')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select defaultValue="pedestrian" onValueChange={(v) => setValue('gate_type', v as 'pedestrian' | 'vehicle' | 'service')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {GATE_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" className="w-full" disabled={createMutation.isPending}>Create</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        }
+        description="Entry and exit points guards can be posted at"
+        action={<Button onClick={() => setEditing('new')}><Plus className="h-4 w-4" /> Add Gate</Button>}
       />
-      <DataTable columns={columns} data={data?.results || []} pageCount={data ? Math.ceil(data.count / 20) : 0} page={page} onPageChange={setPage} />
+      <Toolbar><SearchInput value={list.search} onChange={list.setSearch} placeholder="Search gates" /></Toolbar>
+      <DataTable columns={columns} {...tableProps(list)} emptyMessage="No gates yet. Add at least one so guards can check visitors in." />
+      {editing && <GateDialog gate={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onDone={() => { refresh(); setEditing(null) }} />}
+      <ConfirmDialog
+        open={!!deleting}
+        title={`Delete ${deleting?.name}?`}
+        description="Its shifts are removed. Past entries stay in the log without a gate name. To pause a gate, mark it closed instead."
+        confirmLabel="Delete gate"
+        destructive
+        pending={remove.isPending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+      />
     </div>
+  )
+}
+
+function GateDialog({ gate, onClose, onDone }: { gate: Gate | null; onClose: () => void; onDone: () => void }) {
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<GateInput>({
+    resolver: zodResolver(gateSchema),
+    defaultValues: { gate_type: 'pedestrian', is_active: true },
+  })
+  useEffect(() => {
+    if (gate) reset({ name: gate.name, code: gate.code, location: gate.location, gate_type: gate.gate_type, is_active: gate.is_active })
+  }, [gate, reset])
+  const save = useMutation({
+    mutationFn: (data: GateInput) => gate ? gatesApi.update(gate.id, data) : gatesApi.create(data),
+    onSuccess: (g) => { toast.success(`${g.name} saved.`); onDone() },
+    onError: (e) => toast.error(getErrorMessage(e)),
+  })
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{gate ? `Edit ${gate.name}` : 'Add gate'}</DialogTitle>
+          <DialogDescription>Guards choose one of these when they start work.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-3" noValidate>
+          <FormField label="Name" required error={errors.name?.message}><Input placeholder="Main Entrance" {...register('name')} /></FormField>
+          <FormField label="Code" required error={errors.code?.message}><Input placeholder="GATE-A" {...register('code')} /></FormField>
+          <FormField label="Location"><Input placeholder="Ground floor lobby" {...register('location')} /></FormField>
+          <FormField label="Type">
+            <NativeSelect {...register('gate_type')}>
+              {GATE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </NativeSelect>
+          </FormField>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4" {...register('is_active')} />
+            Open (guards can check visitors in here)
+          </label>
+          <Button type="submit" className="w-full" disabled={save.isPending}>Save gate</Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

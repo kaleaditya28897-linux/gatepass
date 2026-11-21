@@ -1,4 +1,5 @@
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
@@ -7,9 +8,20 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Seed demo data for GatePass"
+    help = "Seed demo data for GatePass (development/demo only: creates well-known passwords)"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force", action="store_true",
+            help="Allow seeding outside DEBUG mode. Never use on a live building.",
+        )
 
     def handle(self, *args, **options):
+        if not settings.DEBUG and not options["force"]:
+            raise CommandError(
+                "seed_demo_data creates accounts with publicly known passwords and is disabled "
+                "outside development. Re-run with --force on a throwaway demo system only."
+            )
         from apps.companies.models import Company, Employee
         from apps.gates.models import Gate, GuardProfile, GuardShift
         from apps.passes.models import VisitorPass
@@ -29,7 +41,7 @@ class Command(BaseCommand):
                 "is_superuser": True,
             },
         )
-        if not admin.has_usable_password():
+        if not admin.password:
             admin.set_password("admin123")
             admin.save()
 
@@ -44,7 +56,7 @@ class Command(BaseCommand):
                 "phone": "+919876543210",
             },
         )
-        if not ca1.has_usable_password():
+        if not ca1.password:
             ca1.set_password("password123")
             ca1.save()
 
@@ -58,7 +70,7 @@ class Command(BaseCommand):
                 "phone": "+919876543211",
             },
         )
-        if not ca2.has_usable_password():
+        if not ca2.password:
             ca2.set_password("password123")
             ca2.save()
 
@@ -108,7 +120,7 @@ class Command(BaseCommand):
                     "phone": f"+91987654{3220 + i}",
                 },
             )
-            if not u.has_usable_password():
+            if not u.password:
                 u.set_password("password123")
                 u.save()
             emp, _ = Employee.objects.get_or_create(
@@ -151,15 +163,17 @@ class Command(BaseCommand):
                     "phone": f"+91987654{3230 + i}",
                 },
             )
-            if not gu.has_usable_password():
+            if not gu.password:
                 gu.set_password("password123")
                 gu.save()
             gp, _ = GuardProfile.objects.get_or_create(user=gu, defaults={"badge_number": badge})
+            # A shift covering all of today (local time) so the demo guard can always work.
+            day_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
             GuardShift.objects.get_or_create(
                 guard=gp,
                 gate=[gate1, gate2][i],
-                shift_start=now.replace(hour=8, minute=0, second=0),
-                defaults={"shift_end": now.replace(hour=20, minute=0, second=0)},
+                shift_start=day_start,
+                defaults={"shift_end": day_start + timedelta(days=1)},
             )
 
         # Sample visitor passes

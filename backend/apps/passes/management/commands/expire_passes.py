@@ -1,15 +1,11 @@
 from django.core.management.base import BaseCommand
-from django.utils import timezone
-from apps.passes.models import VisitorPass
+
+from apps.passes.tasks import expire_stale_passes
 
 
 class Command(BaseCommand):
-    help = "Mark expired visitor passes as expired"
+    help = "Mark expired visitor passes as expired (also runs automatically via Celery beat)"
 
     def handle(self, *args, **options):
-        now = timezone.now()
-        expired = VisitorPass.objects.filter(
-            status__in=["pending", "approved"],
-            valid_until__lt=now,
-        ).update(status="expired")
+        expired = expire_stale_passes()
         self.stdout.write(self.style.SUCCESS(f"Marked {expired} passes as expired."))

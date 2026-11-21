@@ -1,5 +1,8 @@
 # GatePass Installation Guide
 
+> **This guide covers a development / evaluation install** (debug mode, demo passwords).
+> For the real building, use `./deploy.sh` and follow [PRODUCTION.md](PRODUCTION.md).
+
 This guide will help you install GatePass on your Linux system. Choose your preferred method below.
 
 ---
@@ -325,7 +328,7 @@ npm run dev
 
 Open your browser and go to:
 - **Frontend:** http://localhost:5173
-- **Admin Panel:** http://localhost:8000/admin/
+- **Django admin (technical):** http://localhost:8000/django-admin/
 
 Login with:
 - **Username:** admin
@@ -352,15 +355,15 @@ cd gatepass
 cp .env.example .env
 
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Wait for services to start (about 30 seconds)
 sleep 30
 
 # Run migrations and create admin
-docker-compose exec backend python manage.py migrate
-docker-compose exec backend python manage.py create_admin
-docker-compose exec backend python manage.py seed_demo_data
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py create_admin
+docker compose exec backend python manage.py seed_demo_data
 ```
 
 Access GatePass at http://localhost:5173

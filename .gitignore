@@ -30,6 +30,8 @@ yarn-error.log*
 
 # Environment
 .env
+.env.production
+backups/
 .env.local
 .env.*.local
 

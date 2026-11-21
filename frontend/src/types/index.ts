@@ -8,6 +8,24 @@ export interface User {
   phone: string
   avatar: string | null
   company?: { id: number; name: string; slug: string } | null
+  /** Employee profile id (employees only). */
+  employee_id?: number | null
+}
+
+export type Role = User['role']
+
+export interface ManagedUser {
+  id: number
+  username: string
+  email: string
+  first_name: string
+  last_name: string
+  role: Role
+  phone: string
+  is_active: boolean
+  company: { id: number; name: string; slug: string } | null
+  last_login: string | null
+  date_joined: string
 }
 
 export interface Company {
@@ -16,6 +34,7 @@ export interface Company {
   slug: string
   admin: number | null
   admin_name: string | null
+  admin_username: string | null
   floor: string
   suite_number: string
   phone: string
@@ -36,6 +55,7 @@ export interface Employee {
   first_name: string
   last_name: string
   phone: string
+  is_active: boolean
   company: number
   company_name: string
   employee_id: string
@@ -61,6 +81,8 @@ export interface Guard {
   user: number
   username: string
   full_name: string
+  first_name: string
+  last_name: string
   email: string
   phone: string
   badge_number: string
@@ -114,16 +136,10 @@ export interface VisitorPass {
   updated_at: string
 }
 
+/** What the pass link shows. Guards/admins additionally get the optional fields. */
 export interface VerifiedVisitorPass {
-  id: number
   visitor_name: string
-  visitor_phone: string
   visitor_company: string
-  id_type: string
-  id_number: string
-  photo: string | null
-  vehicle_number: string
-  purpose: string
   host_company_name: string
   host_employee_name: string | null
   qr_code_image: string | null
@@ -131,6 +147,46 @@ export interface VerifiedVisitorPass {
   status: VisitorPass['status']
   valid_from: string
   valid_until: string
+  id?: number
+  pass_code?: string
+  visitor_phone?: string
+  visitor_email?: string
+  id_type?: string
+  id_number?: string
+  photo?: string | null
+  vehicle_number?: string
+  purpose?: string
+  rejected_reason?: string
+  active_entry?: number | null
+}
+
+export interface CompanyOption {
+  id: number
+  name: string
+  floor: string
+  suite_number: string
+}
+
+export interface EmployeeOption {
+  id: number
+  name: string
+  company: number
+  designation: string
+  department: string
+}
+
+export interface Notification {
+  id: number
+  recipient: number | null
+  recipient_phone: string
+  recipient_email: string
+  channel: 'sms' | 'email'
+  subject: string
+  message: string
+  status: 'pending' | 'sent' | 'failed'
+  error_message: string
+  sent_at: string | null
+  created_at: string
 }
 
 export interface EntryLog {
@@ -138,10 +194,10 @@ export interface EntryLog {
   visitor_pass: number | null
   delivery: number | null
   entry_type: 'visitor' | 'delivery'
-  gate: number
-  gate_name: string
-  checked_in_by: number
-  checked_in_by_name: string
+  gate: number | null
+  gate_name: string | null
+  checked_in_by: number | null
+  checked_in_by_name: string | null
   checked_out_by: number | null
   checked_out_by_name: string | null
   check_in_time: string
@@ -166,7 +222,12 @@ export interface Delivery {
   delivery_person_name: string
   delivery_person_phone: string
   expected_at: string | null
-  otp_code: string
+  /** Only present for the recipient side (never for guards). */
+  otp_code?: string
+  otp_attempts?: number
+  otp_locked?: boolean
+  company_floor?: string
+  delivered_at?: string | null
   notes: string
   created_at: string
   updated_at: string
@@ -201,6 +262,7 @@ export interface LoginResponse {
 export interface AnalyticsOverview {
   total_companies: number
   total_passes_today: number
+  pending_passes: number
   active_visitors: number
   pending_deliveries: number
   checked_in_today: number

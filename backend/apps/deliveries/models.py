@@ -1,4 +1,4 @@
-import random
+import secrets
 from django.db import models
 from django.conf import settings
 from apps.core.models import TimestampedModel
@@ -32,6 +32,8 @@ class Delivery(TimestampedModel):
     delivery_person_phone = models.CharField(max_length=20, blank=True)
     expected_at = models.DateTimeField(null=True, blank=True)
     otp_code = models.CharField(max_length=6, blank=True)
+    otp_attempts = models.PositiveSmallIntegerField(default=0)
+    delivered_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -43,5 +45,5 @@ class Delivery(TimestampedModel):
 
     def save(self, *args, **kwargs):
         if not self.otp_code:
-            self.otp_code = str(random.randint(100000, 999999))
+            self.otp_code = f"{secrets.randbelow(1_000_000):06d}"
         super().save(*args, **kwargs)

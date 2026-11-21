@@ -248,68 +248,64 @@ When the delivery arrives:
 
 ## Guard Guide
 
-As a Guard, you manage gate operations - checking in visitors and verifying deliveries.
+As a Guard, you run the gate: checking visitors in and out and handing over deliveries.
+The guard screens are built for a phone or tablet.
 
 ### Starting Your Shift
 
-1. Log in to GatePass
-2. Your dashboard shows your current shift and gate assignment
-3. If not assigned, contact your Admin
+1. Log in to GatePass on the gate tablet or your phone
+2. At the top of the **Dashboard**, choose the gate you are standing at under **"You are at"**
+   - If the admin has rostered you on a shift, your gate is selected automatically
+   - Your choice is remembered on that device
+3. You cannot check anyone in until a gate is chosen
 
 ### Checking In a Visitor
 
-**Method 1: QR Code Scan**
+**Visitor with a pass (QR code)**
 
-1. Go to **Scan QR**
-2. Ask visitor to show their QR code
-3. Enter the pass code (or use camera to scan)
-4. Select your gate
-5. Click **"Verify Pass"**
-6. Review visitor details
-7. If valid, click **"Check In"**
+1. Go to **Scan Pass**
+2. Tap **"Scan QR with camera"** and point it at the visitor's QR code
+   (the first time, allow the browser to use the camera)
+3. No camera? Type or paste the pass code or pass link and tap **"Find"**
+4. Check the visitor's details against the person in front of you
+5. Tap **"Check in"**
 
-**Method 2: Walk-in Visitor**
+If the pass is pending, rejected, cancelled, expired or already used, the screen says
+**"Do not admit"** with the reason. A pass can be used up to 30 minutes before its start time.
 
-For visitors without a pre-approved pass:
+**Walk-in visitor (no pass)**
 
-1. Go to **Scan QR**
-2. Click **"Walk-in Pass"** (if enabled)
-3. Fill in visitor details
-4. The pass is auto-approved
-5. Visitor is checked in
+1. Go to **Walk-in**
+2. Enter the visitor's name and phone, pick the company and (if known) the person they are meeting
+3. Optionally record the ID shown and the vehicle number
+4. Tap **"Register and check in"** — the host gets an SMS that their visitor has arrived
 
 ### Checking Out a Visitor
 
-1. Go to **Active Visitors**
-2. Find the visitor
-3. Click **"Check Out"**
+Either:
 
-The visitor's pass is updated to "Checked Out".
+- Scan the visitor's QR code again on **Scan Pass** and tap **"Visitor is leaving: check out"**, or
+- Go to **Inside Now**, find the visitor (use the search box) and tap **"Check out"**
 
 ### Managing Deliveries
 
-1. Go to **Deliveries**
-2. See all pending deliveries
+1. Go to **Deliveries** to see everything employees are expecting
 
-**When delivery person arrives:**
+**When the delivery person arrives:**
 
-1. Find the matching delivery
-2. Click **"Arrived"**
-3. The employee is notified
-4. Ask delivery person for OTP
-5. Click **"Verify OTP"**
-6. Enter the 6-digit code
-7. If correct, click **"Mark Delivered"**
+1. Find the matching delivery (search by platform, order ID or rider)
+2. Tap **"Arrived"**, optionally note the rider's name and phone, and confirm
+3. The employee receives an SMS with a 6-digit OTP (they can also see it in their own Deliveries page)
+4. When the employee comes to collect, tap **"Enter OTP"** and type the code they give you
+5. A correct code releases the delivery in one step. **Only hand it over once the code is accepted.**
 
-### Viewing Active Visitors
+After 5 wrong codes the delivery is locked; the employee must generate a new OTP from their Deliveries page.
+You are never shown the OTP yourself.
 
-The **Active Visitors** page shows:
-- Everyone currently in the building
-- When they checked in
-- Which company they're visiting
-- Quick check-out button
+### Viewing Who Is Inside
 
-This list auto-refreshes every 30 seconds.
+The **Inside Now** page shows everyone currently in the building, when they came in,
+which company they are visiting and at which gate. It refreshes every 30 seconds.
 
 ---
 
@@ -317,22 +313,30 @@ This list auto-refreshes every 30 seconds.
 
 ### Changing Your Password
 
-1. Contact your Admin to reset your password
-2. Or use the Django admin panel (if you have access)
+1. Click your name in the top-right corner
+2. Choose **"Account & password"**
+3. Enter your current password and the new one, then **"Change password"**
+
+You can update your name, email and phone number in the same window.
+
+**Forgot your password?** There is no self-service reset. Ask your company admin (employees)
+or the building admin, who can set a new one from **Users → Reset password**.
 
 ### Viewing Public Pass Page
 
-Visitors can view their pass details at:
+Visitors open the link they received by SMS or email:
 ```
-http://yoursite.com/pass/[pass-code]
+https://your-gatepass-address/pass/[pass-code]
 ```
 
 This page shows:
 - Visitor name
 - Host company and employee
 - Valid dates
-- QR code (if approved)
-- Current status
+- QR code (once the pass is approved)
+- Current status, with a plain explanation of what to do
+
+It deliberately does not show the visitor's phone number or ID details.
 
 ### Understanding Pass Statuses
 
@@ -352,7 +356,7 @@ This page shows:
 |--------|---------|
 | Expected | Waiting for delivery |
 | Arrived | Delivery person at gate |
-| Delivered | Successfully delivered |
+| Delivered | OTP verified and handed over |
 | Rejected | Rejected at gate |
 | Cancelled | Cancelled by employee |
 

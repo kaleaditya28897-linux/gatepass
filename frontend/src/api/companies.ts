@@ -1,5 +1,6 @@
+import { AxiosError } from 'axios'
 import { apiClient } from './client'
-import type { Company, Employee, PaginatedResponse } from '@/types'
+import type { Company, CompanyOption, Employee, EmployeeOption, PaginatedResponse } from '@/types'
 
 export const companiesApi = {
   list: async (params?: Record<string, string>): Promise<PaginatedResponse<Company>> => {
@@ -12,12 +13,18 @@ export const companiesApi = {
     return response.data
   },
 
-  create: async (data: Partial<Company>): Promise<Company> => {
+  /** Active companies for pickers. */
+  directory: async (): Promise<CompanyOption[]> => {
+    const response = await apiClient.get('/companies/directory/')
+    return response.data
+  },
+
+  create: async (data: Record<string, unknown>): Promise<Company> => {
     const response = await apiClient.post('/companies/', data)
     return response.data
   },
 
-  update: async (id: number, data: Partial<Company>): Promise<Company> => {
+  update: async (id: number, data: Record<string, unknown>): Promise<Company> => {
     const response = await apiClient.patch(`/companies/${id}/`, data)
     return response.data
   },
@@ -48,7 +55,15 @@ export const employeesApi = {
     return response.data
   },
 
-  update: async (id: number, data: Partial<Employee>): Promise<Employee> => {
+  /** Active employees of one company for host pickers. */
+  directory: async (companyId?: number): Promise<EmployeeOption[]> => {
+    const response = await apiClient.get('/companies/employees/directory/', {
+      params: companyId ? { company: companyId } : undefined,
+    })
+    return response.data
+  },
+
+  update: async (id: number, data: Record<string, unknown>): Promise<Employee> => {
     const response = await apiClient.patch(`/companies/employees/${id}/`, data)
     return response.data
   },
@@ -57,13 +72,23 @@ export const employeesApi = {
     await apiClient.delete(`/companies/employees/${id}/`)
   },
 
-  bulkUpload: async (file: File, companyId: number): Promise<{ created: number; errors: unknown[] }> => {
+  bulkUpload: async (file: File, companyId?: number): Promise<BulkUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('company', companyId.toString())
+    if (companyId) formData.append('company', companyId.toString())
+    // Some rows failing is reported in the body with a 400 when nothing was created.
     const response = await apiClient.post('/companies/employees/bulk-upload/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      validateStatus: (status) => status === 201 || status === 400,
     })
+    if (response.status === 400 && typeof response.data?.created !== 'number') {
+      throw new AxiosError('Upload rejected', undefined, response.config, response.request, response)
+    }
     return response.data
   },
+}
+
+export interface BulkUploadResult {
+  created: number
+  errors: { row: number; username: string; error: string }[]
 }

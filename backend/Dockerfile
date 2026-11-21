@@ -16,9 +16,14 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 COPY . .
-RUN mkdir -p /app/staticfiles /app/media
+
+# The app runs as this unprivileged user. The entrypoint starts as root only to fix
+# ownership of the mounted volumes, then drops to it before running anything else.
+RUN useradd --uid 10001 --no-create-home --home-dir /app gatepass && \
+    mkdir -p /app/staticfiles /app/media && \
+    chown -R gatepass:gatepass /app/staticfiles /app/media
 
 EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "gatepass.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4"]
+CMD ["gunicorn", "gatepass.wsgi:application", "-c", "gunicorn.conf.py"]

@@ -1,617 +1,196 @@
 # GatePass Production Deployment Guide
 
-This guide covers deploying GatePass to a production environment with proper security, performance, and reliability configurations.
+This is the supported way to run GatePass for a real building: one server running the
+Docker stack in `docker-compose.prod.yml`, installed and upgraded with `./deploy.sh`.
 
----
+## What gets installed
 
-## Table of Contents
+| Service | What it does |
+|---|---|
+| `frontend` | Caddy web server: serves the web app, terminates HTTPS, proxies `/api/` to the backend |
+| `backend` | Django + Gunicorn REST API (runs migrations on start, runs as an unprivileged user) |
+| `celery` | Background worker: sends SMS/email, expires old passes every 5 minutes |
+| `db` | PostgreSQL 16 (data in the `postgres_data` volume) |
+| `redis` | Redis 7 (job queue and login rate limiting) |
 
-1. [Prerequisites](#prerequisites)
-2. [Server Requirements](#server-requirements)
-3. [Security Checklist](#security-checklist)
-4. [Backend Deployment](#backend-deployment)
-5. [Frontend Deployment](#frontend-deployment)
-6. [Nginx Configuration](#nginx-configuration)
-7. [SSL/HTTPS Setup](#sslhttps-setup)
-8. [Process Management](#process-management)
-9. [Database Configuration](#database-configuration)
-10. [Monitoring & Logging](#monitoring--logging)
-11. [Backup Strategy](#backup-strategy)
-12. [Scaling](#scaling)
+Only ports 80 and 443 are published. The database and Redis are not reachable from outside.
 
----
+## Requirements
 
-## Prerequisites
+- A Linux server (2 CPU / 4 GB RAM / 20 GB disk is plenty for a single building) that stays on
+- [Docker Engine with the compose plugin](https://docs.docker.com/engine/install/)
+- The server's clock set correctly (passes are time-based)
+- **HTTPS.** Browsers only allow camera access (QR scanning) on HTTPS pages. Decide which applies:
 
-Before deploying to production, ensure you have:
+| Your situation | Choose | What you need |
+|---|---|---|
+| Staff and visitors reach GatePass over the internet | `public` | A domain name (e.g. `gatepass.yourbuilding.com`) whose DNS points at the server, ports 80 and 443 open to the internet. A trusted certificate is issued and renewed automatically. |
+| Only reachable inside the office network | `internal` | A fixed IP address or internal host name for the server. GatePass makes its own certificate; each device shows a warning until you trust it (see below). Visitors can only open their pass link while on that network. |
+| You already run a reverse proxy / load balancer with HTTPS | `http` | The proxy must forward to this server's port 80 and send `X-Forwarded-Proto: https`. |
 
-- [ ] A Linux server (Ubuntu 22.04 LTS recommended)
-- [ ] A domain name pointing to your server
-- [ ] SSH access to your server
-- [ ] Basic Linux command line knowledge
+Visitors receive their pass as a link, so in most buildings the `public` option is the right one.
 
----
-
-## Server Requirements
-
-### Minimum Requirements
-
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| CPU | 2 cores | 4 cores |
-| RAM | 4 GB | 8 GB |
-| Storage | 20 GB SSD | 50 GB SSD |
-| Bandwidth | 1 TB/month | Unlimited |
-
-### Recommended Providers
-
-- **DigitalOcean** - Simple, affordable ($24/month for recommended)
-- **Linode** - Good performance
-- **AWS EC2** - Scalable, more complex
-- **Vultr** - Good value
-
----
-
-## Security Checklist
-
-Before going live, complete this checklist:
-
-### Server Security
-
-- [ ] Update all system packages
-- [ ] Configure firewall (UFW)
-- [ ] Disable root SSH login
-- [ ] Use SSH key authentication only
-- [ ] Install fail2ban
-- [ ] Enable automatic security updates
-
-### Application Security
-
-- [ ] Change all default passwords
-- [ ] Set strong SECRET_KEY
-- [ ] Enable HTTPS only
-- [ ] Configure CORS properly
-- [ ] Set secure cookie flags
-- [ ] Review file permissions
-
-### Database Security
-
-- [ ] Use strong database password
-- [ ] Restrict database access to localhost
-- [ ] Enable PostgreSQL SSL (optional)
-- [ ] Set up automated backups
-
----
-
-## Backend Deployment
-
-### Step 1: System Setup
+## Install
 
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install dependencies
-sudo apt install -y python3 python3-pip python3-venv \
-    postgresql postgresql-contrib \
-    redis-server \
-    nginx \
-    supervisor \
-    certbot python3-certbot-nginx
-
-# Create application user
-sudo useradd -m -s /bin/bash gatepass
-sudo usermod -aG sudo gatepass
+git clone https://github.com/kaleaditya28897-linux/gatepass.git /opt/gatepass
+cd /opt/gatepass
+./deploy.sh
 ```
 
-### Step 2: Clone Application
+The script asks for the address, the HTTPS option, the time zone and an admin password. It then:
+
+1. writes `.env.production` with a random `SECRET_KEY` and database password (file mode 600)
+2. builds and starts the stack
+3. waits until the application reports healthy
+4. creates the building administrator login
+
+When it finishes, open the address it prints and sign in.
+
+### Trusting the certificate (`internal` option only)
+
+Export GatePass's local certificate authority and install it as a trusted root on each gate
+tablet / staff device:
 
 ```bash
-# Switch to gatepass user
-sudo -u gatepass -i
-
-# Clone repository
-git clone https://github.com/kaleaditya28897-linux/gatepass.git ~/gatepass
-cd ~/gatepass/backend
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  cp frontend:/data/caddy/pki/authorities/local/root.crt ./gatepass-root.crt
 ```
 
-### Step 3: Python Environment
+Until a device trusts it, the browser shows a certificate warning that has to be accepted once.
+
+## First-time setup in the app
+
+Sign in as the admin, then:
+
+1. **Gates** – add each entrance guards will work at
+2. **Companies** – add each tenant; fill in the "Company admin login" section so the tenant can manage their own people
+3. **Guards** – add a login for each guard (or one per gate tablet)
+4. Optional: **Shifts** – roster guards onto gates so their gate is pre-selected
+5. Each company admin signs in and adds employees (**Employees → Add** or **Bulk upload** from CSV)
+
+Hand out the temporary passwords and ask everyone to change theirs under their name → **Account & password**.
+
+## Turning on real SMS and email
+
+Out of the box, messages are only written to the worker log (`SMS_BACKEND=console`). That
+includes the pass link sent to visitors and the delivery OTP sent to employees. Employees can
+always read their OTP in the app, and hosts can copy the pass link from the pass details, so the
+system is usable without SMS, but for day-to-day use you will want it on.
+
+Edit `.env.production`:
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# SMS via Twilio
+SMS_BACKEND=twilio
+TWILIO_ACCOUNT_SID=ACxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxx
+TWILIO_FROM_NUMBER=+1xxxxxxxxxx
 
-# Install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Step 4: Production Configuration
-
-Create `/home/gatepass/gatepass/backend/.env`:
-
-```bash
-# Django Settings
-SECRET_KEY=your-super-secure-random-key-here
-DJANGO_SETTINGS_MODULE=gatepass.settings.production
-DEBUG=False
-
-# Database
-DB_NAME=gatepass
-DB_USER=gatepass
-DB_PASSWORD=your-secure-database-password
-DB_HOST=localhost
-DB_PORT=5432
-
-# Redis
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-
-# URLs
-FRONTEND_URL=https://yourdomain.com
-ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
-CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-
-# Security
-SECURE_SSL_REDIRECT=True
-CSRF_COOKIE_SECURE=True
-SESSION_COOKIE_SECURE=True
-SECURE_HSTS_SECONDS=31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS=True
-SECURE_HSTS_PRELOAD=True
-
-# Email (configure your SMTP)
+# Email via any SMTP account
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
-EMAIL_HOST_USER=your-email@gmail.com
-EMAIL_HOST_PASSWORD=your-app-password
-DEFAULT_FROM_EMAIL=noreply@yourdomain.com
-
-# SMS (optional - Twilio)
-SMS_BACKEND=twilio
-TWILIO_ACCOUNT_SID=your-twilio-sid
-TWILIO_AUTH_TOKEN=your-twilio-token
-TWILIO_FROM_NUMBER=+1234567890
+EMAIL_HOST_USER=you@example.com
+EMAIL_HOST_PASSWORD=app-password
+DEFAULT_FROM_EMAIL=GatePass <you@example.com>
 ```
 
-Generate a secure SECRET_KEY:
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(50))"
-```
+Then run `./deploy.sh` again. Phone numbers must be stored in international format (`+91…`)
+for Twilio. Check **Notifications** in the admin menu to see whether messages were sent or failed.
+For Indian mobile numbers, check Twilio's DLT registration requirements before going live.
 
-### Step 5: Database Setup
+## Day-to-day operations
+
+All commands are run from the install directory. To save typing:
 
 ```bash
-# Create database and user
-sudo -u postgres psql << EOF
-CREATE USER gatepass WITH PASSWORD 'your-secure-database-password';
-CREATE DATABASE gatepass OWNER gatepass;
-GRANT ALL PRIVILEGES ON DATABASE gatepass TO gatepass;
-EOF
-
-# Run migrations
-cd ~/gatepass/backend
-source venv/bin/activate
-python manage.py migrate
-python manage.py collectstatic --noinput
-python manage.py create_admin --password your-secure-admin-password
+alias gp='docker compose --env-file .env.production -f docker-compose.prod.yml'
 ```
 
-### Step 6: Test Gunicorn
+| Task | Command |
+|---|---|
+| Status of all services | `gp ps` |
+| Follow logs | `gp logs -f backend` (or `celery`, `frontend`, `db`) |
+| Restart everything | `gp restart` |
+| Stop / start | `gp down` / `gp up -d` (data is kept) |
+| Health check | `curl -k https://<address>/api/v1/health/` → `{"status": "ok", "database": "ok"}` |
+| Reset a locked-out admin | `gp exec backend python manage.py changepassword admin` |
+| Add another admin from the shell | `gp exec -e GATEPASS_ADMIN_PASSWORD='...' backend python manage.py create_admin --username name` |
+
+### Upgrading
 
 ```bash
-gunicorn gatepass.wsgi:application --bind 0.0.0.0:8000
-# Test: curl http://localhost:8000/api/v1/auth/me/
-# Should return 401 (unauthorized) - this is correct
-# Press Ctrl+C to stop
+cd /opt/gatepass
+scripts/backup.sh          # always back up first
+git pull
+./deploy.sh                # rebuilds, applies database migrations, restarts
 ```
 
----
+### Backups
 
-## Frontend Deployment
-
-### Step 1: Install Node.js
+`scripts/backup.sh` writes a compressed database dump and a copy of the media files
+(pass QR codes) to `./backups`, verifies them, and deletes backups older than 14 days.
+It is safe to run while the system is in use.
 
 ```bash
-# Install Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+scripts/backup.sh
+# schedule it nightly (root's crontab):
+15 2 * * *  /opt/gatepass/scripts/backup.sh >> /var/log/gatepass-backup.log 2>&1
 ```
 
-### Step 2: Build Frontend
+**Copy `./backups` and `.env.production` to another machine or cloud storage.** A backup that
+lives only on the same disk does not protect you from losing the server.
+
+Restore (replaces current data):
 
 ```bash
-cd ~/gatepass/frontend
-
-# Install dependencies
-npm ci --production=false
-
-# Create production environment file
-cat > .env.production << EOF
-VITE_API_URL=https://yourdomain.com/api/v1
-EOF
-
-# Build for production
-npm run build
+scripts/restore.sh backups/gatepass-db-YYYYMMDD-HHMMSS.sql.gz backups/gatepass-media-YYYYMMDD-HHMMSS.tar.gz
 ```
 
-This creates a `dist/` folder with static files.
-
-### Step 3: Serve Static Files
-
-The built frontend will be served by Nginx (configured below).
-
----
-
-## Nginx Configuration
-
-Create `/etc/nginx/sites-available/gatepass`:
-
-```nginx
-# Redirect HTTP to HTTPS
-server {
-    listen 80;
-    server_name yourdomain.com www.yourdomain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-# Main HTTPS server
-server {
-    listen 443 ssl http2;
-    server_name yourdomain.com www.yourdomain.com;
-
-    # SSL certificates (will be added by certbot)
-    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    # Frontend (React static files)
-    location / {
-        root /home/gatepass/gatepass/frontend/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-
-        # Cache static assets
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
-    }
-
-    # Backend API
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # Django admin
-    location /admin/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Static files (Django)
-    location /static/ {
-        alias /home/gatepass/gatepass/backend/staticfiles/;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Media files (uploads)
-    location /media/ {
-        alias /home/gatepass/gatepass/backend/media/;
-        expires 1d;
-    }
-
-    # Logging
-    access_log /var/log/nginx/gatepass_access.log;
-    error_log /var/log/nginx/gatepass_error.log;
-}
-```
-
-Enable the site:
-```bash
-sudo ln -s /etc/nginx/sites-available/gatepass /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
----
-
-## SSL/HTTPS Setup
-
-### Using Let's Encrypt (Free)
-
-```bash
-# Install certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# Obtain certificate
-sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
-
-# Test auto-renewal
-sudo certbot renew --dry-run
-```
-
-Certbot automatically:
-- Obtains SSL certificates
-- Updates Nginx configuration
-- Sets up auto-renewal (cron job)
-
----
-
-## Process Management
-
-### Using Supervisor
-
-Create `/etc/supervisor/conf.d/gatepass.conf`:
-
-```ini
-[program:gatepass-backend]
-command=/home/gatepass/gatepass/backend/venv/bin/gunicorn gatepass.wsgi:application --bind 127.0.0.1:8000 --workers 4 --timeout 120
-directory=/home/gatepass/gatepass/backend
-user=gatepass
-autostart=true
-autorestart=true
-redirect_stderr=true
-stdout_logfile=/var/log/gatepass/backend.log
-environment=DJANGO_SETTINGS_MODULE="gatepass.settings.production"
-
-[program:gatepass-celery]
-command=/home/gatepass/gatepass/backend/venv/bin/celery -A gatepass worker --loglevel=info
-directory=/home/gatepass/gatepass/backend
-user=gatepass
-autostart=true
-autorestart=true
-redirect_stderr=true
-stdout_logfile=/var/log/gatepass/celery.log
-
-[group:gatepass]
-programs=gatepass-backend,gatepass-celery
-```
-
-Apply configuration:
-```bash
-# Create log directory
-sudo mkdir -p /var/log/gatepass
-sudo chown gatepass:gatepass /var/log/gatepass
-
-# Reload supervisor
-sudo supervisorctl reread
-sudo supervisorctl update
-sudo supervisorctl start gatepass:*
-```
-
-### Management Commands
-
-```bash
-# Check status
-sudo supervisorctl status gatepass:*
-
-# Restart services
-sudo supervisorctl restart gatepass:*
-
-# View logs
-sudo tail -f /var/log/gatepass/backend.log
-sudo tail -f /var/log/gatepass/celery.log
-```
-
----
-
-## Database Configuration
-
-### PostgreSQL Tuning
-
-Edit `/etc/postgresql/14/main/postgresql.conf`:
-
-```ini
-# Memory (adjust based on your server RAM)
-shared_buffers = 1GB           # 25% of RAM
-effective_cache_size = 3GB     # 75% of RAM
-work_mem = 64MB
-maintenance_work_mem = 256MB
-
-# Connections
-max_connections = 100
-
-# Write-ahead log
-wal_buffers = 16MB
-checkpoint_completion_target = 0.9
-```
-
-Restart PostgreSQL:
-```bash
-sudo systemctl restart postgresql
-```
-
-### Automated Backups
-
-Create `/home/gatepass/backup.sh`:
-
-```bash
-#!/bin/bash
-BACKUP_DIR=/home/gatepass/backups
-DATE=$(date +%Y%m%d_%H%M%S)
-FILENAME="gatepass_backup_$DATE.sql.gz"
-
-# Create backup directory
-mkdir -p $BACKUP_DIR
-
-# Backup database
-pg_dump -U gatepass gatepass | gzip > $BACKUP_DIR/$FILENAME
-
-# Keep only last 7 days
-find $BACKUP_DIR -name "gatepass_backup_*.sql.gz" -mtime +7 -delete
-
-echo "Backup completed: $FILENAME"
-```
-
-Add to crontab:
-```bash
-chmod +x /home/gatepass/backup.sh
-crontab -e
-# Add: 0 2 * * * /home/gatepass/backup.sh
-```
-
----
-
-## Monitoring & Logging
-
-### Application Logs
-
-- Backend: `/var/log/gatepass/backend.log`
-- Celery: `/var/log/gatepass/celery.log`
-- Nginx: `/var/log/nginx/gatepass_*.log`
-
-### Log Rotation
-
-Create `/etc/logrotate.d/gatepass`:
-
-```
-/var/log/gatepass/*.log {
-    daily
-    missingok
-    rotate 14
-    compress
-    delaycompress
-    notifempty
-    create 0640 gatepass gatepass
-    postrotate
-        supervisorctl restart gatepass:* > /dev/null
-    endscript
-}
-```
-
-### Health Checks
-
-Create `/home/gatepass/healthcheck.sh`:
-
-```bash
-#!/bin/bash
-
-# Check backend
-if curl -s http://localhost:8000/api/v1/ > /dev/null; then
-    echo "✅ Backend: OK"
-else
-    echo "❌ Backend: FAILED"
-fi
-
-# Check PostgreSQL
-if pg_isready -U gatepass > /dev/null; then
-    echo "✅ PostgreSQL: OK"
-else
-    echo "❌ PostgreSQL: FAILED"
-fi
-
-# Check Redis
-if redis-cli ping > /dev/null; then
-    echo "✅ Redis: OK"
-else
-    echo "❌ Redis: FAILED"
-fi
-
-# Check Nginx
-if systemctl is-active --quiet nginx; then
-    echo "✅ Nginx: OK"
-else
-    echo "❌ Nginx: FAILED"
-fi
-```
-
----
-
-## Scaling
-
-### Horizontal Scaling
-
-For high traffic, consider:
-
-1. **Load Balancer** - Nginx or HAProxy in front
-2. **Multiple Backend Servers** - Run Gunicorn on multiple servers
-3. **Database Replication** - PostgreSQL read replicas
-4. **Redis Cluster** - For high availability
-5. **CDN** - CloudFlare or AWS CloudFront for static files
-
-### Vertical Scaling
-
-Simple upgrades:
-- More RAM for database caching
-- More CPU cores (increase Gunicorn workers)
-- Faster SSD for database performance
-
----
-
-## Deployment Checklist
-
-Before going live:
-
-- [ ] All default passwords changed
-- [ ] SSL certificate installed
-- [ ] Firewall configured
-- [ ] Backups tested
-- [ ] Monitoring set up
-- [ ] Error logging configured
-- [ ] Performance tested
-- [ ] Security headers configured
-- [ ] CORS configured correctly
-- [ ] Email notifications tested
-- [ ] SMS notifications tested (if enabled)
-
----
-
-## Updating Production
-
-```bash
-# Pull latest code
-cd ~/gatepass
-git pull origin main
-
-# Update backend
-cd backend
-source venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py collectstatic --noinput
-deactivate
-
-# Update frontend
-cd ../frontend
-npm ci
-npm run build
-
-# Restart services
-sudo supervisorctl restart gatepass:*
-```
-
-Consider creating a deployment script for automation.
-
----
-
-## Getting Help
-
-- Review logs first
-- Check [Troubleshooting Guide](TROUBLESHOOTING.md)
-- Open an issue on [GitHub](https://github.com/kaleaditya28897-linux/gatepass/issues)
+Test a restore once before you rely on it.
+
+## Settings reference (`.env.production`)
+
+| Variable | Purpose |
+|---|---|
+| `SITE_ADDRESS` | Host name or IP the web server answers on (`http://host` for plain HTTP behind a proxy) |
+| `TLS_DIRECTIVE` | Empty = automatic public certificate; `tls internal` = self-issued certificate |
+| `HTTP_PORT`, `HTTPS_PORT` | Published ports (default 80 / 443) |
+| `FRONTEND_URL` | Full public URL; used in QR codes and pass links. Must match what people actually open. |
+| `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` | Must contain the same host / origin as `FRONTEND_URL` |
+| `SECRET_KEY` | Random secret (min. 32 characters). Changing it signs everyone out. |
+| `TIME_ZONE` | Building's time zone, e.g. `Asia/Kolkata` |
+| `SECURE_SSL_REDIRECT` | Keep `True` unless GatePass is intentionally HTTP-only |
+| `DB_*` | Database name, user, password |
+| `CACHE_URL` | Redis database used for rate limiting |
+| `SMS_BACKEND`, `TWILIO_*`, `EMAIL_*` | Notification delivery (see above) |
+| `PASS_EARLY_CHECKIN_MINUTES` | How early before a pass starts a visitor may check in (default 30) |
+| `WALK_IN_VALIDITY_HOURS` | Validity of passes created at the gate (default 8) |
+| `DELIVERY_OTP_MAX_ATTEMPTS` | Wrong OTPs before a delivery locks (default 5) |
+| `THROTTLE_LOGIN` | Login attempts per username per address (default `10/min`) |
+| `GUNICORN_WORKERS` | API worker processes (default: up to 4) |
+
+After changing any value run `./deploy.sh` (or `gp up -d`) to apply it.
+
+## Security notes
+
+- Never run `seed_demo_data` on the live system; it creates accounts with published passwords. It refuses to run in production unless forced.
+- The Django admin site is at `/django-admin/` and only accepts the superuser created by `deploy.sh`. Day-to-day administration is done in the web app; you rarely need it.
+- Login is rate limited, passwords must pass Django's strength checks, and every sign-in, approval, check-in, check-out and OTP attempt is recorded in **Audit Logs**.
+- Disable accounts (Users page) rather than deleting them when someone leaves, so the audit trail keeps their name.
+- Keep the server patched (`apt upgrade`), restrict SSH to keys, and allow only ports 22, 80 and 443 in the firewall.
+- Visitor data (names, phone numbers, ID details) is personal data. Decide how long you keep entry logs and who may export them.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| `deploy.sh` says the backend did not become healthy | `gp logs backend`. Usually a wrong value in `.env.production` (`ALLOWED_HOSTS`, `SECRET_KEY` too short, database password changed after first start). |
+| Browser shows a certificate error on a public domain | DNS must point at this server and ports 80/443 must be reachable from the internet. `gp logs frontend` shows the certificate attempts. |
+| "Camera access was blocked" on the scan page | The page must be HTTPS, and the browser must be allowed to use the camera for the site. Typing/pasting the pass code always works. |
+| QR codes point to the wrong address | Fix `FRONTEND_URL`, run `./deploy.sh`. Existing QR codes keep the old address; cancel and re-issue those passes. |
+| Nobody receives SMS | **Notifications** page shows the error per message. `gp logs celery` for details. |
+| Guard cannot check anyone in | They must choose a gate, and at least one gate must be marked open on the **Gates** page. |
+| Times look wrong | Set `TIME_ZONE` and check the server clock (`timedatectl`). |
+
+More in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

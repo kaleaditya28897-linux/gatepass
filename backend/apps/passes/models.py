@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.utils import timezone
 from django.conf import settings
 from apps.core.models import TimestampedModel
 
@@ -63,6 +64,18 @@ class VisitorPass(TimestampedModel):
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def is_past_validity(self):
+        return self.valid_until < timezone.now()
+
+    @property
+    def effective_status(self):
+        """Status as it should be shown right now, even if the periodic expiry
+        job has not yet caught up with a pass that ran out."""
+        if self.status in (self.Status.PENDING, self.Status.APPROVED) and self.is_past_validity:
+            return self.Status.EXPIRED
+        return self.status
 
     def __str__(self):
         return f"Pass {self.pass_code} - {self.visitor_name} -> {self.host_company}"

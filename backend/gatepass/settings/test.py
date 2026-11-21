@@ -26,3 +26,10 @@ MEDIA_ROOT = tempfile.mkdtemp(prefix="gatepass-test-media-")
 # Disable Celery task execution during tests
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# Throttling is exercised explicitly in the tests that need it.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,
+    "DEFAULT_THROTTLE_RATES": {"login": "1000/min", "login_address": "1000/min", "pass_verify": "1000/min", "otp_verify": "1000/min"},
+}
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}

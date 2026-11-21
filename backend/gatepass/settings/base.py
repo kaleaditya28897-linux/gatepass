@@ -90,7 +90,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "Asia/Kolkata"
+TIME_ZONE = config("TIME_ZONE", default="Asia/Kolkata")
 USE_I18N = True
 USE_TZ = True
 
@@ -117,7 +117,34 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ),
+    # Scoped throttles are applied explicitly on the sensitive endpoints
+    # (login, public pass lookup, delivery OTP verification).
+    "DEFAULT_THROTTLE_RATES": {
+        # Attempts on one username from one address / all logins from one address.
+        "login": config("THROTTLE_LOGIN", default="10/min"),
+        "login_address": config("THROTTLE_LOGIN_ADDRESS", default="120/min"),
+        "pass_verify": config("THROTTLE_PASS_VERIFY", default="300/min"),
+        "otp_verify": config("THROTTLE_OTP_VERIFY", default="20/min"),
+    },
+    # Number of trusted reverse proxies in front of Django. Used to pick the
+    # real client address out of X-Forwarded-For for throttling.
+    "NUM_PROXIES": config("NUM_PROXIES", default=0, cast=int) or None,
 }
+
+# Cache (used for request throttling). Point CACHE_URL at Redis in production
+# so limits are shared between Gunicorn workers.
+CACHE_URL = config("CACHE_URL", default="")
+if CACHE_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_URL,
+        }
+    }
+else:
+    CACHES = {
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    }
 
 # JWT
 SIMPLE_JWT = {
@@ -135,6 +162,13 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BEAT_SCHEDULE = {
+    "expire-visitor-passes": {
+        "task": "apps.passes.tasks.expire_passes",
+        "schedule": 300.0,
+    },
+}
 
 # Notification backends
 SMS_BACKEND = config("SMS_BACKEND", default="console")  # console | twilio | msg91
@@ -146,4 +180,24 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@gatepass.local")
 
 # Frontend URL for QR codes / pass links
-FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173").rstrip("/")
+
+# Gate rules
+# Visitors may check in this many minutes before their pass becomes valid.
+PASS_EARLY_CHECKIN_MINUTES = config("PASS_EARLY_CHECKIN_MINUTES", default=30, cast=int)
+# Default validity for walk-in passes created at the gate.
+WALK_IN_VALIDITY_HOURS = config("WALK_IN_VALIDITY_HOURS", default=8, cast=int)
+# Wrong OTP attempts allowed before a delivery is locked.
+DELIVERY_OTP_MAX_ATTEMPTS = config("DELIVERY_OTP_MAX_ATTEMPTS", default=5, cast=int)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "standard"},
+    },
+    "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},
+}

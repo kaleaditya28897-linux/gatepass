@@ -29,4 +29,14 @@ export const DELIVERY_TYPES = [
   { value: 'other', label: 'Other' },
 ]
 
-export const FOOD_PLATFORMS = ['Swiggy', 'Zomato', 'Uber Eats', 'Dunzo']
+export const DELIVERY_PLATFORMS = ['Swiggy', 'Zomato', 'Amazon', 'Flipkart', 'Blinkit', 'Zepto', 'BlueDart', 'DTDC', 'India Post']
+
+export const PASS_STATUSES = ['pending', 'approved', 'checked_in', 'checked_out', 'expired', 'rejected', 'cancelled']
+export const DELIVERY_STATUSES = ['expected', 'arrived', 'delivered', 'cancelled']
+export const ID_TYPES = ['Aadhaar', 'Driving Licence', 'PAN', 'Passport', 'Voter ID', 'Company ID', 'Other']
+export const ROLE_LABELS: Record<string, string> = {
+  admin: 'Building admin',
+  company: 'Company admin',
+  employee: 'Employee',
+  guard: 'Guard',
+}

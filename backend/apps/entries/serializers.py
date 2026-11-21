@@ -3,7 +3,7 @@ from .models import EntryLog
 
 
 class EntryLogSerializer(serializers.ModelSerializer):
-    gate_name = serializers.CharField(source="gate.name", read_only=True)
+    gate_name = serializers.CharField(source="gate.name", read_only=True, default=None)
     checked_in_by_name = serializers.SerializerMethodField()
     checked_out_by_name = serializers.SerializerMethodField()
 
@@ -25,12 +25,12 @@ class EntryLogSerializer(serializers.ModelSerializer):
 
     def get_checked_in_by_name(self, obj):
         if obj.checked_in_by:
-            return obj.checked_in_by.get_full_name()
+            return obj.checked_in_by.get_full_name() or obj.checked_in_by.username
         return None
 
     def get_checked_out_by_name(self, obj):
         if obj.checked_out_by:
-            return obj.checked_out_by.get_full_name()
+            return obj.checked_out_by.get_full_name() or obj.checked_out_by.username
         return None
 
 

@@ -43,7 +43,7 @@ export const guardsApi = {
     return response.data
   },
 
-  update: async (id: number, data: Partial<Guard>): Promise<Guard> => {
+  update: async (id: number, data: Record<string, unknown>): Promise<Guard> => {
     const response = await apiClient.patch(`/guards/${id}/`, data)
     return response.data
   },
@@ -59,9 +59,12 @@ export const shiftsApi = {
     return response.data
   },
 
-  myCurrent: async (): Promise<GuardShift> => {
-    const response = await apiClient.get('/shifts/my-current/')
-    return response.data
+  /** The signed-in guard's shift right now, or null when none is scheduled. */
+  myCurrent: async (): Promise<GuardShift | null> => {
+    const response = await apiClient.get('/shifts/my-current/', {
+      validateStatus: (status) => status === 200 || status === 204 || status === 404,
+    })
+    return response.status === 200 ? response.data : null
   },
 
   create: async (data: Partial<GuardShift>): Promise<GuardShift> => {

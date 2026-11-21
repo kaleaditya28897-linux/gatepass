@@ -523,8 +523,10 @@ sudo tail -f /var/log/postgresql/postgresql-*-main.log
 # Redis
 sudo tail -f /var/log/redis/redis-server.log
 
-# Nginx (production)
-sudo tail -f /var/log/nginx/gatepass_error.log
+# Production stack (Docker): web tier, API, background worker
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f frontend
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f backend
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f celery
 
 # Application (production)
 sudo tail -f /var/log/gatepass/backend.log

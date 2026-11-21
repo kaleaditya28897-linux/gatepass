@@ -17,6 +17,9 @@ import { AdminPassesPage } from '@/pages/admin/Passes'
 import { AdminEntriesPage } from '@/pages/admin/Entries'
 import { AdminDeliveriesPage } from '@/pages/admin/Deliveries'
 import { AuditLogsPage } from '@/pages/admin/AuditLogs'
+import { ShiftsPage } from '@/pages/admin/Shifts'
+import { UsersPage } from '@/pages/admin/Users'
+import { NotificationsPage } from '@/pages/admin/Notifications'
 
 // Company pages
 import { CompanyDashboard } from '@/pages/company/Dashboard'
@@ -33,6 +36,7 @@ import { EmployeeDeliveriesPage } from '@/pages/employee/Deliveries'
 // Guard pages
 import { GuardDashboard } from '@/pages/guard/Dashboard'
 import { ScanPage } from '@/pages/guard/Scan'
+import { WalkInPage } from '@/pages/guard/WalkIn'
 import { ActiveVisitorsPage } from '@/pages/guard/ActiveVisitors'
 import { GuardDeliveriesPage } from '@/pages/guard/Deliveries'
 
@@ -60,6 +64,9 @@ function App() {
         <Route path="employees" element={<AdminEmployeesPage />} />
         <Route path="gates" element={<GatesPage />} />
         <Route path="guards" element={<GuardsPage />} />
+        <Route path="shifts" element={<ShiftsPage />} />
+        <Route path="users" element={<UsersPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="passes" element={<AdminPassesPage />} />
         <Route path="entries" element={<AdminEntriesPage />} />
         <Route path="deliveries" element={<AdminDeliveriesPage />} />
@@ -83,6 +90,7 @@ function App() {
       <Route path="/guard" element={<ProtectedRoute allowedRoles={['guard']}><AppShell /></ProtectedRoute>}>
         <Route index element={<GuardDashboard />} />
         <Route path="scan" element={<ScanPage />} />
+        <Route path="walk-in" element={<WalkInPage />} />
         <Route path="active" element={<ActiveVisitorsPage />} />
         <Route path="deliveries" element={<GuardDeliveriesPage />} />
       </Route>

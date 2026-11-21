@@ -36,7 +36,14 @@ class Employee(TimestampedModel):
     department = models.CharField(max_length=100, blank=True)
 
     class Meta:
-        unique_together = ["company", "employee_id"]
+        constraints = [
+            # Employee IDs are optional, but must be unique inside a company when given.
+            models.UniqueConstraint(
+                fields=["company", "employee_id"],
+                condition=~models.Q(employee_id=""),
+                name="unique_employee_id_per_company",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.company.name}"

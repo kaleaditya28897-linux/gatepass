@@ -1,110 +1,163 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { passesApi } from '@/api/passes'
 import { entriesApi } from '@/api/entries'
-import { shiftsApi } from '@/api/gates'
+import { useGuardGate } from '@/hooks/useGuardGate'
+import { toast } from '@/store/toastStore'
+import { getErrorMessage } from '@/lib/errors'
+import { extractPassCode, formatDateTime } from '@/utils/formatters'
+import type { VerifiedVisitorPass } from '@/types'
+import { GateSelector } from '@/components/guard/GateSelector'
+import { QrScanner } from '@/components/guard/QrScanner'
 import { PageHeader } from '@/components/common/PageHeader'
+import { StatusBadge } from '@/components/common/StatusBadge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { StatusBadge } from '@/components/common/StatusBadge'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { formatDateTime } from '@/utils/formatters'
-import { QrCode, Check } from 'lucide-react'
+import { CheckCircle2, LogIn, LogOut, XCircle } from 'lucide-react'
+
+const BLOCKED_REASON: Partial<Record<VerifiedVisitorPass['status'], string>> = {
+  pending: 'This pass has not been approved yet. Ask the visitor to contact their host.',
+  rejected: 'This pass was rejected by the host company.',
+  cancelled: 'This pass was cancelled.',
+  expired: 'This pass has expired.',
+  checked_out: 'This pass has already been used and the visitor has left.',
+}
 
 export function ScanPage() {
-  const [passCode, setPassCode] = useState('')
+  const [typed, setTyped] = useState('')
+  const [done, setDone] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const guardGate = useGuardGate()
 
-  const { data: currentShift, isLoading: loadingShift } = useQuery({
-    queryKey: ['my-shift'],
-    queryFn: shiftsApi.myCurrent,
-    retry: false,
+  const lookup = useMutation({
+    mutationFn: (code: string) => passesApi.verify(code),
+    onMutate: () => setDone(null),
   })
+  const pass = lookup.data
 
-  const verifyMutation = useMutation({
-    mutationFn: passesApi.verify,
-  })
+  const afterGateAction = (message: string) => {
+    queryClient.invalidateQueries({ queryKey: ['active-entries'] })
+    setDone(message)
+    setTyped('')
+    lookup.reset()
+    toast.success(message)
+  }
 
-  const checkInMutation = useMutation({
+  const checkIn = useMutation({
     mutationFn: entriesApi.checkIn,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['active-entries'] })
-      setPassCode('')
-      verifyMutation.reset()
-    },
+    onSuccess: (entry) => afterGateAction(`${entry.visitor_name} checked in at ${entry.gate_name}.`),
+    onError: (e) => toast.error(getErrorMessage(e)),
+  })
+  const checkOut = useMutation({
+    mutationFn: entriesApi.checkOut,
+    onSuccess: (entry) => afterGateAction(`${entry.visitor_name} checked out.`),
+    onError: (e) => toast.error(getErrorMessage(e)),
   })
 
-  const handleVerify = () => {
-    if (passCode) {
-      verifyMutation.mutate(passCode)
+  const find = (raw: string) => {
+    const code = extractPassCode(raw)
+    if (!code) {
+      toast.error('That is not a GatePass code. Scan the QR on the visitor’s pass.')
+      return
     }
+    lookup.mutate(code)
   }
 
-  const handleCheckIn = () => {
-    if (passCode && currentShift) {
-      checkInMutation.mutate({ pass_code: passCode, gate: currentShift.gate })
-    }
-  }
-
-  if (loadingShift) return <LoadingSpinner className="h-64" />
+  const details: [string, string | undefined][] = pass ? [
+    ['Phone', pass.visitor_phone],
+    ['From', pass.visitor_company],
+    ['Visiting', pass.host_company_name],
+    ['Host', pass.host_employee_name ?? undefined],
+    ['Purpose', pass.purpose],
+    ['ID', [pass.id_type, pass.id_number].filter(Boolean).join(' ') || undefined],
+    ['Vehicle', pass.vehicle_number],
+    ['Valid from', formatDateTime(pass.valid_from)],
+    ['Valid until', formatDateTime(pass.valid_until)],
+  ] : []
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Scan QR Code" description="Verify and check in visitors" />
-      <div className="grid gap-6 md:grid-cols-2">
+    <div className="space-y-4">
+      <PageHeader title="Scan Pass" description="Scan the visitor's QR code to check them in or out" />
+      <GateSelector guardGate={guardGate} />
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><QrCode className="h-5 w-5" /> Enter Pass Code</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Find the pass</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Pass Code (UUID)</Label>
-              <Input value={passCode} onChange={(e) => setPassCode(e.target.value)} placeholder="Enter or scan pass code" />
-            </div>
-            <div className="space-y-2">
-              <Label>Current Gate</Label>
-              <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
-                {currentShift?.gate_name || 'No active shift assigned. Start your shift before checking visitors in.'}
+            <QrScanner onScan={find} />
+            <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); find(typed) }}>
+              <Label htmlFor="pass-code">Or type / paste the pass code or link</Label>
+              <div className="flex gap-2">
+                <Input id="pass-code" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autoComplete="off" />
+                <Button type="submit" variant="outline" disabled={!typed.trim() || lookup.isPending}>Find</Button>
               </div>
-            </div>
-            <Button onClick={handleVerify} disabled={!passCode || verifyMutation.isPending} className="w-full">
-              Verify Pass
-            </Button>
+            </form>
           </CardContent>
         </Card>
-        {verifyMutation.data && (
-          <Card>
-            <CardHeader><CardTitle>Pass Details</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Status</span>
-                <StatusBadge status={verifyMutation.data.status} />
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Visitor</span><span className="font-medium">{verifyMutation.data.visitor_name}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span className="font-medium">{verifyMutation.data.visitor_phone}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Company</span><span className="font-medium">{verifyMutation.data.host_company_name}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Host</span><span className="font-medium">{verifyMutation.data.host_employee_name || 'N/A'}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Valid Until</span><span className="font-medium">{formatDateTime(verifyMutation.data.valid_until)}</span></div>
-              </div>
-              {verifyMutation.data.status === 'approved' && (
-                <Button onClick={handleCheckIn} disabled={!currentShift || checkInMutation.isPending} className="w-full">
-                  <Check className="h-4 w-4 mr-2" /> Check In
-                </Button>
-              )}
-              {!currentShift && (
-                <p className="text-sm text-muted-foreground text-center">
-                  You need an active shift before you can check visitors in.
-                </p>
-              )}
-              {checkInMutation.isSuccess && <p className="text-green-600 text-center font-medium">Checked in successfully!</p>}
+
+        {done && (
+          <Card className="border-green-600">
+            <CardContent className="flex flex-col items-center gap-2 p-8 text-center" role="status">
+              <CheckCircle2 className="h-12 w-12 text-green-600" />
+              <p className="text-lg font-semibold">{done}</p>
+              <p className="text-sm text-muted-foreground">Ready for the next visitor.</p>
             </CardContent>
           </Card>
         )}
-        {verifyMutation.isError && (
+
+        {lookup.isError && (
+          <Card className="border-destructive">
+            <CardContent className="flex flex-col items-center gap-2 p-8 text-center" role="alert">
+              <XCircle className="h-12 w-12 text-destructive" />
+              <p className="text-lg font-semibold">Pass not found</p>
+              <p className="text-sm text-muted-foreground">{getErrorMessage(lookup.error, 'Do not let the visitor in on this code.')}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {pass && (
           <Card>
-            <CardContent className="p-6">
-              <p className="text-destructive text-center">Pass not found or invalid.</p>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-2">
+                <span>{pass.visitor_name}</span>
+                <StatusBadge status={pass.status} />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {pass.photo && <img src={pass.photo} alt={`Photo of ${pass.visitor_name}`} className="mx-auto h-32 w-32 rounded-md object-cover" />}
+              <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1.5 text-sm">
+                {details.filter(([, value]) => value).map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="text-right font-medium break-words">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {pass.status === 'approved' && pass.pass_code && (
+                <Button
+                  className="h-12 w-full text-base"
+                  disabled={!guardGate.gate || checkIn.isPending}
+                  onClick={() => guardGate.gate && checkIn.mutate({ pass_code: pass.pass_code!, gate: guardGate.gate.id })}
+                >
+                  <LogIn className="h-5 w-5" /> {checkIn.isPending ? 'Checking in…' : 'Check in'}
+                </Button>
+              )}
+              {pass.status === 'approved' && !guardGate.gate && (
+                <p className="text-center text-sm text-destructive">Choose your gate above first.</p>
+              )}
+              {pass.status === 'checked_in' && pass.active_entry && (
+                <Button className="h-12 w-full text-base" variant="outline" disabled={checkOut.isPending}
+                  onClick={() => checkOut.mutate(pass.active_entry!)}>
+                  <LogOut className="h-5 w-5" /> {checkOut.isPending ? 'Checking out…' : 'Visitor is leaving: check out'}
+                </Button>
+              )}
+              {BLOCKED_REASON[pass.status] && (
+                <p className="rounded-md bg-destructive/10 p-3 text-center text-sm font-medium text-destructive" role="alert">
+                  Do not admit. {BLOCKED_REASON[pass.status]}
+                  {pass.rejected_reason ? ` Reason: ${pass.rejected_reason}` : ''}
+                </p>
+              )}
             </CardContent>
           </Card>
         )}

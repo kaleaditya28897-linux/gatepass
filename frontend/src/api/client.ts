@@ -3,7 +3,7 @@ import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/store/authStore'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
 type RetriableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
 
@@ -19,6 +19,22 @@ function clearSession() {
   queryClient.clear()
 }
 
+let refreshInFlight: Promise<string> | null = null
+
+/** One refresh at a time, shared by every request that hit a 401 together. */
+function refreshAccessToken(refreshToken: string): Promise<string> {
+  if (!refreshInFlight) {
+    refreshInFlight = axios
+      .post(`${API_URL}/auth/token/refresh/`, { refresh: refreshToken })
+      .then((response) => {
+        useAuthStore.getState().setToken(response.data.access, response.data.refresh)
+        return response.data.access as string
+      })
+      .finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
 apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
   if (token) {
@@ -32,7 +48,8 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as RetriableRequestConfig | undefined
 
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+    const isLogin = originalRequest?.url?.includes('/auth/login/')
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isLogin) {
       originalRequest._retry = true
 
       const refreshToken = useAuthStore.getState().refreshToken
@@ -42,11 +59,8 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const response = await axios.post(`${API_URL}/auth/token/refresh/`, {
-          refresh: refreshToken,
-        })
-        useAuthStore.getState().setToken(response.data.access)
-        originalRequest.headers.Authorization = `Bearer ${response.data.access}`
+        const access = await refreshAccessToken(refreshToken)
+        originalRequest.headers.Authorization = `Bearer ${access}`
         return apiClient.request(originalRequest)
       } catch {
         clearSession()

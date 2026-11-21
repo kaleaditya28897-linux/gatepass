@@ -12,7 +12,7 @@ export const deliveriesApi = {
     return response.data
   },
 
-  create: async (data: Partial<Delivery>): Promise<Delivery> => {
+  create: async (data: Record<string, unknown>): Promise<Delivery> => {
     const response = await apiClient.post('/deliveries/', data)
     return response.data
   },
@@ -26,23 +26,32 @@ export const deliveriesApi = {
     await apiClient.delete(`/deliveries/${id}/`)
   },
 
-  arrived: async (id: number): Promise<Delivery> => {
-    const response = await apiClient.post(`/deliveries/${id}/arrived/`)
+  cancel: async (id: number): Promise<Delivery> => {
+    const response = await apiClient.post(`/deliveries/${id}/cancel/`)
     return response.data
   },
 
-  delivered: async (id: number): Promise<Delivery> => {
-    const response = await apiClient.post(`/deliveries/${id}/delivered/`)
+  regenerateOtp: async (id: number): Promise<Delivery> => {
+    const response = await apiClient.post(`/deliveries/${id}/regenerate-otp/`)
     return response.data
   },
 
-  verifyOtp: async (id: number, otp: string): Promise<{ verified: boolean }> => {
+  arrived: async (
+    id: number,
+    data: { gate?: number; delivery_person_name?: string; delivery_person_phone?: string } = {},
+  ): Promise<Delivery> => {
+    const response = await apiClient.post(`/deliveries/${id}/arrived/`, data)
+    return response.data
+  },
+
+  /** Checks the recipient's OTP; a correct code releases the delivery in the same step. */
+  verifyOtp: async (id: number, otp: string): Promise<{ verified: boolean; detail: string }> => {
     const response = await apiClient.post(`/deliveries/${id}/verify-otp/`, { otp })
     return response.data
   },
 
-  pendingGate: async (): Promise<PaginatedResponse<Delivery>> => {
-    const response = await apiClient.get('/deliveries/pending-gate/')
+  pendingGate: async (params?: Record<string, string>): Promise<PaginatedResponse<Delivery>> => {
+    const response = await apiClient.get('/deliveries/pending-gate/', { params })
     return response.data
   },
 }

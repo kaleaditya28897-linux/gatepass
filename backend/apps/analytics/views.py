@@ -1,6 +1,6 @@
 from datetime import timedelta
 from django.db.models import Count, Q
-from django.db.models.functions import TruncDate, TruncHour
+from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -46,10 +46,13 @@ def _filter_deliveries_for_user(user):
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def overview(request):
-    today = timezone.now().date()
+    today = timezone.localdate()
     return Response({
         "total_companies": Company.objects.filter(is_active=True).count(),
         "total_passes_today": VisitorPass.objects.filter(created_at__date=today).count(),
+        "pending_passes": VisitorPass.objects.filter(
+            status="pending", valid_until__gte=timezone.now()
+        ).count(),
         "active_visitors": EntryLog.objects.filter(check_out_time__isnull=True, entry_type="visitor").count(),
         "pending_deliveries": Delivery.objects.filter(status__in=["expected", "arrived"]).count(),
         "checked_in_today": EntryLog.objects.filter(check_in_time__date=today).count(),
@@ -89,11 +92,12 @@ def entries_by_gate(request):
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def peak_hours(request):
+    """Check-ins per hour of day (0-23, building local time) over the period."""
     days = _get_days(request)
     start_date = timezone.now() - timedelta(days=days)
     data = (
         EntryLog.objects.filter(check_in_time__gte=start_date)
-        .annotate(hour=TruncHour("check_in_time"))
+        .annotate(hour=ExtractHour("check_in_time"))
         .values("hour")
         .annotate(count=Count("id"))
         .order_by("hour")

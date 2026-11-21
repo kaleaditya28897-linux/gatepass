@@ -17,13 +17,20 @@ export const analyticsApi = {
     return response.data
   },
 
-  peakHours: async (days = 30): Promise<{ hour: string; count: number }[]> => {
+  peakHours: async (days = 30): Promise<{ hour: number; count: number }[]> => {
     const response = await apiClient.get('/analytics/peak-hours/', { params: { days } })
     return response.data
   },
 
-  deliveryStats: async (days = 30): Promise<Record<string, unknown>> => {
+  deliveryStats: async (days = 30): Promise<DeliveryStats> => {
     const response = await apiClient.get('/analytics/delivery-stats/', { params: { days } })
     return response.data
   },
+}
+
+export interface DeliveryStats {
+  total: number
+  by_type: { delivery_type: string; count: number }[]
+  by_status: { status: string; count: number }[]
+  by_platform: { platform_name: string; count: number }[]
 }

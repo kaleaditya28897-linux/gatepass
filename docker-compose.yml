@@ -34,7 +34,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: celery -A gatepass worker --loglevel=info
+    command: celery -A gatepass worker -B --loglevel=info --schedule=/tmp/celerybeat-schedule
     volumes:
       - ./backend:/app
     env_file:

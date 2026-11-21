@@ -1,7 +1,12 @@
+import logging
+
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
+
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task
@@ -11,8 +16,10 @@ def send_sms_notification(notification_id):
     try:
         backend = getattr(settings, "SMS_BACKEND", "console")
         if backend == "console":
-            print(f"[SMS] To: {notification.recipient_phone} | Message: {notification.message}")
+            logger.info("[SMS] To: %s | Message: %s", notification.recipient_phone, notification.message)
         elif backend == "twilio":
+            if not (settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_FROM_NUMBER):
+                raise RuntimeError("Twilio credentials are not configured.")
             from twilio.rest import Client
             client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
             client.messages.create(
@@ -20,10 +27,13 @@ def send_sms_notification(notification_id):
                 from_=settings.TWILIO_FROM_NUMBER,
                 to=notification.recipient_phone,
             )
+        else:
+            raise RuntimeError(f"Unsupported SMS_BACKEND '{backend}'.")
         notification.status = Notification.Status.SENT
         notification.sent_at = timezone.now()
         notification.save()
     except Exception as e:
+        logger.exception("Notification %s failed", notification_id)
         notification.status = Notification.Status.FAILED
         notification.error_message = str(e)
         notification.save()
@@ -44,6 +54,7 @@ def send_email_notification(notification_id):
         notification.sent_at = timezone.now()
         notification.save()
     except Exception as e:
+        logger.exception("Notification %s failed", notification_id)
         notification.status = Notification.Status.FAILED
         notification.error_message = str(e)
         notification.save()

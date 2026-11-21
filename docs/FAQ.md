@@ -98,14 +98,13 @@ No. Each pass has one check-in. After check-out, the pass is marked "Checked Out
 
 ### How does the delivery OTP system work?
 
-1. Employee creates a delivery expectation
-2. System generates a 6-digit OTP
-3. Employee shares OTP with delivery person
-4. When delivery arrives at gate:
-   - Guard marks as "Arrived"
-   - Employee gets notified
-   - Guard enters OTP to verify
-   - Guard marks as "Delivered"
+1. Employee (or their company admin) registers an expected delivery
+2. System generates a 6-digit OTP that only the employee's side can see
+3. When the delivery arrives at the gate, the guard marks it as "Arrived" and the employee gets an SMS with the OTP
+4. The employee gives the OTP to the guard when collecting
+5. The guard enters the OTP; a correct code marks the delivery as "Delivered" in the same step.
+   There is no way to release a delivery without the OTP.
+6. After 5 wrong attempts the delivery locks until the employee generates a new OTP
 
 ### Can I customize the QR code design?
 
@@ -151,21 +150,18 @@ DB_PASSWORD=new_password
 ./stop.sh && ./start.sh
 ```
 
-### How do I reset the admin password?
+### How do I reset a password?
+
+Any building admin can reset anyone's password from **Users → Reset password** in the web app.
+
+If the only admin is locked out, reset it from the server:
 
 ```bash
-cd ~/gatepass/backend
-source venv/bin/activate
-python manage.py shell
-```
+# Production (Docker)
+docker compose --env-file .env.production -f docker-compose.prod.yml exec backend python manage.py changepassword admin
 
-```python
-from django.contrib.auth import get_user_model
-User = get_user_model()
-admin = User.objects.get(username='admin')
-admin.set_password('new_password')
-admin.save()
-exit()
+# Development install
+cd ~/gatepass/backend && source venv/bin/activate && python manage.py changepassword admin
 ```
 
 ### How do I backup the database?
@@ -248,15 +244,16 @@ Admins can view these at: Dashboard → Audit Logs
 
 ### Can I restrict IP addresses?
 
-Yes, configure this in Nginx:
+Yes. The simplest way is a firewall rule on the server (for example allow ports 80/443 only
+from the office network). You can also restrict it in `frontend/Caddyfile`:
 
-```nginx
-location /api/ {
-    allow 192.168.1.0/24;
-    deny all;
-    # ... rest of config
-}
 ```
+@outside not remote_ip 192.168.1.0/24
+respond @outside 403
+```
+
+Remember that visitors open their pass link from their own phones, so `/pass/*` and
+`/api/v1/passes/verify/*` normally need to stay reachable.
 
 ### How long are JWT tokens valid?
 
